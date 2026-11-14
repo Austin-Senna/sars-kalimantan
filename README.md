@@ -26,6 +26,7 @@ uv run python mosaic.py      # 12-day HV loss mosaic -> web/data/loss_*.png, ste
 uv run python probe.py       # per-pixel HV and HH history for the click-in chart
 uv run python firms.py       # fire detections and agreement (needs FIRMS_MAP_KEY in .env)
 uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML GeoTIFF in data/raw/peat/)
+uv run python smoke.py       # regional smoke: VIIRS Deep Blue aerosol optical depth per step, with city readings
 ```
 
 ## Method
@@ -37,6 +38,7 @@ uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML Geo
 - **Mask:** land of the island of Borneo, from the NASA Blue Marble basemap.
 - **Fire check:** 65% of the radar-loss area lies within 2 km of a NASA FIRMS VIIRS fire detection, against 34% of all forest. FIRMS standard processing to Jul 31, near real time after.
 - **CO2:** lost area on peat (Peat-ML peat fraction) x 353 t dry matter burnt per ha x 1.70 t CO2 per t (IPCC 2013 Wetlands Supplement, Tables 2.6 and 2.7, tropical drained-peat wildfire). The range uses the IPCC 95% interval for fuel burnt. Peat only: the trees above it are not counted. For scale, the panel converts it to cars at 4.6 t CO2 per car per year (US EPA). The "Peat" layer shows the Peat-ML peat share, so red on brown is where the CO2 comes from.
+- **Smoke:** daily NASA VIIRS Deep Blue aerosol optical depth (Suomi-NPP and NOAA-20) from GIBS, each colour turned back into its value with the GIBS colormap and averaged per 12-day step, from Sumatra to Sulawesi. City readings average about 45 km around each city. AOD under 0.3 is clear, over 1 is thick smoke. Pontianak reaches 2.9 and Palangka Raya 3.6 in September; Singapore reaches 1.8 by late October. Blank readings are cloud, or smoke too thick to retrieve.
 - **Ketapang chart:** the burned pixels of the largest loss cluster in West Kalimantan (38 km², 6th on the island), from the single track-frame with the most looks over it, each look matched to that frame's own baseline. Leaf echo (HV) falls 20% from June to Oct 10. Clicks elsewhere use a coarser 1 km, multi-pass composite.
 
 ## Limits
@@ -51,6 +53,7 @@ uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML Geo
 
 - NISAR L2 GCOV provisional, NASA/ISRO, via the ASF DAAC: https://nisar-docs.asf.alaska.edu/gcov/
 - NASA CMR granule search: https://cmr.earthdata.nasa.gov/
+- NASA VIIRS Deep Blue aerosol optical depth (Suomi-NPP, NOAA-20) via GIBS: https://gibs.earthdata.nasa.gov/
 - NASA FIRMS VIIRS active fire detections: https://firms.modaps.eosdis.nasa.gov/
 - Peat-ML global peatland extent, Melton et al. (2022), CC-BY 4.0: https://doi.org/10.5281/zenodo.7352284
 - IPCC (2014), 2013 Supplement to the 2006 IPCC Guidelines: Wetlands, Chapter 2, Tables 2.6 and 2.7: https://www.ipcc-nggip.iges.or.jp/public/wetlands/

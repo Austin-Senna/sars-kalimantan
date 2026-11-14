@@ -6,7 +6,7 @@ CO2 per step = sum over lost pixels of (pixel area x peat fraction) x peat fuel 
 - Fuel burnt: 353 t dry matter per ha, 95% CI 170 to 536 (IPCC 2013 Wetlands Supplement, Table 2.6,
   tropical wildfire on drained peat).
 - Emission factor: 464 g CO2-C per kg dry matter (Table 2.7, tropical), times 44/12 = 1,701 g CO2 per kg.
-Also writes web/data/peat.png. Car comparison: 4.6 t CO2 per typical passenger car per year (US EPA).
+Also writes web/data/peat.png and peatburn_SS.png (burned peat per step). Car comparison: 4.6 t CO2 per typical passenger car per year (US EPA).
 Counts peat only, not the trees above it, and assumes every lost pixel on peat burned.
 Run after mosaic.py and probe.py (mosaic.py rewrites steps.json).
 """
@@ -44,6 +44,18 @@ def write_peat(frac: np.ndarray, land: np.ndarray) -> None:
     Image.fromarray(rgba).save(mosaic.WEB / "peat.png", optimize=True)
 
 
+def write_burned_peat(s: int, lost: np.ndarray, frac: np.ndarray) -> None:
+    """Per-step layer: lost pixels on peat as dark char, darker where more of the cell is peat."""
+    from PIL import Image
+    from scipy.ndimage import binary_dilation
+    on_peat = lost & (frac > 0.05)
+    shown = binary_dilation(on_peat)  # the same one-pixel halo as the loss layer, so they line up
+    rgba = np.zeros((*lost.shape, 4), np.uint8)
+    rgba[..., :3] = (38, 22, 14)
+    rgba[..., 3] = np.where(shown, (90 + frac * 165).clip(0, 255), 0).astype(np.uint8)
+    Image.fromarray(rgba).save(mosaic.WEB / f"peatburn_{s:02d}.png", optimize=True)
+
+
 def main() -> None:
     cached = np.load(mosaic.WORK / "mosaic.npz")
     score = cached["score"]
@@ -57,6 +69,7 @@ def main() -> None:
     for s, step in enumerate(meta["steps"]):
         lost = land & np.isfinite(score[s]) & (score[s].astype(np.float32) > mosaic.LOSS_MIN)
         peat_km2 = float((km2_px * frac)[lost].sum())
+        write_burned_peat(s, lost, frac)
         mt = [peat_km2 * 100 * f * CO2_PER_KG / 1e6 for f in FUEL_T_HA]  # km2 -> ha, t dm -> t CO2 -> Mt
         step.update(peat_km2=round(peat_km2, 1), co2_mt=round(mt[0], 2), co2_lo=round(mt[1], 2), co2_hi=round(mt[2], 2),
                     cars_m=round(mt[0] / CAR_T_YEAR, 2))
