@@ -85,3 +85,12 @@ footer { margin-top: auto; display: grid; gap: 10px; }
 #chart circle.hv { fill: var(--hv); stroke: none; }
 #chart circle.hh { fill: var(--hh); stroke: none; }
 .probenote { margin: 6px 0 0; font-size: 13px; color: var(--ink); }
+.smokenote { margin: 4px 0 0 30px; font-size: 12px; color: var(--muted); }
+.city { white-space: nowrap; font: 600 12px/1.2 system-ui, sans-serif; color: #fff; background: rgba(16, 20, 18, 0.85);
+  border-radius: 6px; padding: 3px 7px; transform: translate(-50%, -50%); border-left: 3px solid #8aa; width: max-content; }
+.city b { font-weight: 600; color: var(--muted); margin-right: 4px; }
+.city.clear { border-left-color: #7ee0be; }
+.city.hazy { border-left-color: #f2c14e; }
+.city.thick { border-left-color: #ff5a36; }
+.city.none { border-left-color: #556; color: var(--muted); font-weight: 400; }
+@media (max-width: 700px) { .city { font-size: 10px; padding: 2px 5px; } }

@@ -7,7 +7,8 @@
 
   // Canvas rendering: tens of thousands of fire dots stay smooth while scrubbing.
   // No maxBounds on phones: the view there spans more latitude than the island, and the clamp would undo the fit above the sheet.
-  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: window.innerWidth > 700 ? bounds.pad(0.3) : null, preferCanvas: true, zoomControl: false });
+  const region = meta.smoke ? L.latLngBounds(meta.smoke.bounds) : bounds;  // Borneo plus Singapore and Kuala Lumpur
+  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: window.innerWidth > 700 ? region.pad(0.3) : null, preferCanvas: true, zoomControl: false });
   L.control.zoom({ position: "topright" }).addTo(map);  // top left sits under the panel
   const narrow = () => window.innerWidth <= 700;
   const fit = () => map.fitBounds(bounds, narrow()
@@ -16,15 +17,19 @@
   fit();
   map.attributionControl.setPrefix(false);
   map.attributionControl.addAttribution(
-    "Radar: NISAR GCOV (NASA/ISRO, ASF DAAC) · Basemap: NASA Blue Marble (GIBS) · Fires: NASA FIRMS");
+    "Radar: NISAR GCOV (NASA/ISRO, ASF DAAC) · Basemap: NASA Blue Marble (GIBS) · Fires: NASA FIRMS · Smoke: NASA VIIRS Deep Blue AOD (GIBS) · Peat: Peat-ML");
 
-  L.imageOverlay("data/basemap.jpg", bounds, { opacity: 0.55 }).addTo(map);
+  if (meta.smoke) L.imageOverlay("data/basemap_region.jpg", region, { opacity: 0.55 }).addTo(map);  // Sumatra to Sulawesi
+  else L.imageOverlay("data/basemap.jpg", bounds, { opacity: 0.55 }).addTo(map);
   L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.85, className: "pixelated" }).addTo(map);
   const forest = L.imageOverlay("data/forest.png", bounds).addTo(map);
   const peat = L.imageOverlay("data/peat.png", bounds, { className: "pixelated" });
 
   map.createPane("loss").style.zIndex = 420;  // above the fire dots (410), which sit above the radar base (400)
   // One overlay per step, all preloaded, only the current one visible: scrubbing never waits on the network.
+  // Burned peat, per step: the loss on peat drawn as dark char above the red, shown with the peat toggle.
+  map.createPane("peatburn").style.zIndex = 425;
+  const peatburn = steps.map((s) => L.imageOverlay(`data/peatburn_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0, pane: "peatburn" }).addTo(map));
   const loss = steps.map((s) => L.imageOverlay(`data/loss_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0, pane: "loss" }).addTo(map));
 
   // Fires draw in their own pane between the radar base and the loss layers, so the red stays on top.
@@ -33,6 +38,23 @@
   firePane.style.opacity = 0.45;  // dense at island zoom: dim enough that the red loss reads on top
   const fireRenderer = L.canvas({ pane: "fires" });
   const fires = L.layerGroup();
+
+  // Smoke: VIIRS aerosol optical depth per step over the wider region, above everything, with city readings.
+  map.createPane("smoke").style.zIndex = 430;
+  const smoke = meta.smoke ? steps.map((s) => L.imageOverlay(`data/smoke_${String(s.step).padStart(2, "0")}.png`, region, { opacity: 0, pane: "smoke" }).addTo(map)) : [];
+  const cityLayer = L.layerGroup();
+  const cityMarkers = meta.smoke ? Object.entries(meta.smoke.cities).map(([name, c]) =>
+    [c, L.marker(c.latlon, { interactive: false, icon: L.divIcon({ className: "city", html: "", iconSize: null }) }).addTo(cityLayer), name]) : [];
+  function drawSmoke() {
+    const on = document.getElementById("tSmoke").checked;
+    smoke.forEach((o, j) => o.setOpacity(on && j === current ? 1 : 0));
+    for (const [c, m, name] of cityMarkers) {
+      const v = c.aod[current];
+      const level = v == null ? "none" : v >= 1 ? "thick" : v >= 0.3 ? "hazy" : "clear";
+      m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null,
+        html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
+    }
+  }
   let fireData = null;
   try {
     fireData = await (await fetch("data/firms.json")).json();
@@ -49,6 +71,8 @@
   function show(i) {
     current = i;
     loss.forEach((o, j) => o.setOpacity(j === i ? 1 : 0));
+    const peatOn = document.getElementById("tPeat").checked;
+    peatburn.forEach((o, j) => o.setOpacity(peatOn && j === i ? 1 : 0));
     const s = steps[i];
     document.getElementById("date").textContent = `${fmtDate(s.start)} to ${fmtDate(s.end)}`;
     document.getElementById("km2").textContent = fmtNum(s.km2);
@@ -63,6 +87,7 @@
     }
     slider.value = i;
     drawFires();
+    drawSmoke();
     drawChart();
   }
 
@@ -94,7 +119,22 @@
   });
   slider.addEventListener("input", () => show(+slider.value));
   document.getElementById("tForest").addEventListener("change", (e) => e.target.checked ? forest.addTo(map) : forest.remove());
-  document.getElementById("tPeat").addEventListener("change", (e) => e.target.checked ? peat.addTo(map) : peat.remove());
+  document.getElementById("tPeat").addEventListener("change", (e) => { e.target.checked ? peat.addTo(map) : peat.remove(); show(current); });
+  document.getElementById("tSmoke").addEventListener("change", (e) => {
+    document.getElementById("smokeNote").hidden = !e.target.checked;
+    if (e.target.checked) {
+      cityLayer.addTo(map);
+      map.flyToBounds(region, { duration: 1, ...(narrow()
+        ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight] }
+        : { paddingTopLeft: [400, 0] }) });
+    } else {
+      cityLayer.remove();
+      map.flyToBounds(bounds, { duration: 1, ...(narrow()
+        ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight] }
+        : { paddingTopLeft: [400, 0] }) });
+    }
+    drawSmoke();
+  });
   document.getElementById("tFires").addEventListener("change", (e) => { e.target.checked ? fires.addTo(map) : fires.remove(); drawFires(); });
 
   // Click probe: per-step HV and HH brightness from the probe PNGs.
