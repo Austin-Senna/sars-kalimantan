@@ -8,37 +8,36 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="map" aria-label="Map of Indonesian Borneo"></div>
+  <div id="map" aria-label="Map of Borneo and the region around it"></div>
 
   <aside id="panel">
-    <header>
-      <p class="kicker">NISAR L-band radar · Indonesian Borneo · 2026</p>
+    <header class="brand">
+      <p class="kicker">NISAR L-band radar · Borneo · 2026</p>
       <h1>Borneo through the smoke</h1>
-      <p class="lede"><span class="key green"></span>Green is tree cover in June. <span class="key red"></span>Red is canopy whose radar echo collapsed since: trees the satellite stopped hearing. <span class="key grey"></span>Grey had no tree cover.</p>
+      <nav class="dots" id="dots" aria-label="Chapters"></nav>
     </header>
 
-    <section class="readout" aria-live="polite">
-      <div class="date" id="date">June 17 to 28</div>
-      <div class="stat"><span id="km2">0</span><small>km² of forest lost</small></div>
-      <div class="stat secondary" id="co2wrap" hidden><span id="co2">0</span><small id="co2label">Mt CO₂ from burning peat</small><small class="cars" id="cars"></small></div>
+    <section class="chapter" id="chapter" aria-live="polite">
+      <p class="chno" id="chNo"></p>
+      <h2 id="chTitle"></h2>
+      <p class="chbody" id="chBody"></p>
+      <div class="widget" id="chWidget"></div>
     </section>
 
-    <section class="time">
-      <button id="play" type="button" aria-label="Play">▶</button>
-      <input id="slider" type="range" min="0" max="0" value="0" aria-label="12-day step">
-    </section>
-
-    <section class="layers">
-      <label><input type="checkbox" id="tPeat"> Peat: dark = burned peat (the CO₂)</label>
-      <label><input type="checkbox" id="tFires"> Fire detections (FIRMS)</label>
-      <label><input type="checkbox" id="tSmoke"> Smoke over the region (NASA VIIRS)</label>
-      <div class="smokenote" id="smokeNote" hidden>
-        <p>Haze is what normal satellites see, as aerosol optical depth (how much sunlight the smoke blocks).</p>
-        <div class="aodbar"></div>
-        <div class="aodticks"><span style="left:0">0.3 clear</span><span style="left:26%">1 hazy</span><span style="left:63%">2</span><span style="right:0">3+ thick</span></div>
-        <p><span class="key nodata"></span>No reading: cloud, or smoke too thick to measure. Small gaps are filled from nearby readings.</p>
+    <section class="explore" id="explore" hidden>
+      <div class="stats">
+        <div><span class="big loss" data-live="km2">0</span><small>km² of tree cover lost</small></div>
+        <div><span class="big" data-live="co2">0</span><small>Mt CO₂ from burning peat</small></div>
       </div>
-      <div class="agree" id="agree" hidden></div>
+      <div class="layers">
+        <label><input type="checkbox" id="tPeat"> Peat <span class="hint">dark = burned peat</span></label>
+        <label><input type="checkbox" id="tFires"> NASA fire detections</label>
+        <label><input type="checkbox" id="tSmoke"> Smoke <span class="hint">what normal satellites see</span></label>
+      </div>
+      <div class="jumps">
+        <button type="button" class="jump" data-jump="ketapang">Ketapang peat dome →</button>
+      </div>
+      <p class="hint">Click anywhere on the map for that spot's radar history.</p>
     </section>
 
     <section class="probe" id="probe" hidden>
@@ -48,14 +47,23 @@
       </div>
       <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
       <p class="probenote" id="probeNote"></p>
-      <p class="legend"><span class="hv"></span>HV hears leaves and branches <span class="hh"></span>HH hears the ground and trunks</p>
+      <p class="legend"><span class="hv"></span>HV: echo off leaves and branches <span class="hh"></span>HH: off ground and trunks</p>
     </section>
 
-    <footer>
-      <button id="jump" type="button">Ketapang peat dome →</button>
-      <small class="jumpnote" id="jumpNote"></small>
-      <p class="limits">Relative brightness from NISAR browse images, not calibrated backscatter. Gaps are missing or partial NISAR frames.</p>
-    </footer>
+    <section class="timeline">
+      <div class="when"><span id="date">June 17 to 28</span></div>
+      <div class="time">
+        <button id="play" type="button" aria-label="Play">▶</button>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="12-day step">
+      </div>
+    </section>
+
+    <div class="nav">
+      <button id="prev" type="button">← Back</button>
+      <button id="next" type="button" class="primary">Next →</button>
+    </div>
+
+    <p class="limits">Radar values are relative brightness from NISAR browse images, not calibrated backscatter. Sources and method: see the README.</p>
   </aside>
 
   <script src="vendor/leaflet.js"></script>
