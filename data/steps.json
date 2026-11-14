@@ -349,8 +349,8 @@
  "co": {
   "units": "ppbv",
   "level": "500 hPa",
-  "low": 100.0,
-  "high": 350.0,
+  "low": 95.0,
+  "high": 330.0,
   "cities": {
    "Singapore": {
     "latlon": [
