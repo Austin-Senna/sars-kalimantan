@@ -32,7 +32,12 @@
       <label><input type="checkbox" id="tPeat"> Peat: dark = burned peat (the CO₂)</label>
       <label><input type="checkbox" id="tFires"> Fire detections (FIRMS)</label>
       <label><input type="checkbox" id="tSmoke"> Smoke over the region (NASA VIIRS)</label>
-      <p class="smokenote" id="smokeNote" hidden>Haze is what normal satellites see. Holes are filled from the steps either side and nearby readings. Numbers are aerosol optical depth: under 0.3 is clear, over 1 is thick smoke.</p>
+      <div class="smokenote" id="smokeNote" hidden>
+        <p>Haze is what normal satellites see, as aerosol optical depth (how much sunlight the smoke blocks).</p>
+        <div class="aodbar"></div>
+        <div class="aodticks"><span style="left:0">0.3 clear</span><span style="left:26%">1 hazy</span><span style="left:63%">2</span><span style="right:0">3+ thick</span></div>
+        <p><span class="key nodata"></span>No reading: cloud, or smoke too thick to measure. Small gaps are filled from nearby readings.</p>
+      </div>
       <div class="agree" id="agree" hidden></div>
     </section>
 

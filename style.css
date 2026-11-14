@@ -86,6 +86,13 @@ footer { margin-top: auto; display: grid; gap: 10px; }
 #chart circle.hh { fill: var(--hh); stroke: none; }
 .probenote { margin: 6px 0 0; font-size: 13px; color: var(--ink); }
 .smokenote { margin: 4px 0 0 30px; font-size: 12px; color: var(--muted); }
+.smokenote p { margin: 0 0 6px; }
+.aodbar { height: 10px; border-radius: 3px; margin-top: 2px;
+  background: linear-gradient(90deg, rgba(226,205,160,0) 0%, rgba(226,205,160,0.75) 26%, rgb(170,145,112) 63%, rgb(96,74,56) 100%); }
+.aodticks { position: relative; height: 14px; margin: 2px 0 8px; font-size: 11px; }
+.aodticks span { position: absolute; top: 0; white-space: nowrap; }
+.aodticks span[style^="left:26"], .aodticks span[style^="left:63"] { transform: translateX(-50%); }
+.key.nodata { background: repeating-linear-gradient(45deg, #beb4a8 0 2px, #8c847a 2px 7px); }
 .city { white-space: nowrap; font: 600 12px/1.2 system-ui, sans-serif; color: #fff; background: rgba(16, 20, 18, 0.85);
   border-radius: 6px; padding: 3px 7px; transform: translate(-50%, -50%); border-left: 3px solid #8aa; width: max-content; }
 .city b { font-weight: 600; color: var(--muted); margin-right: 4px; }
