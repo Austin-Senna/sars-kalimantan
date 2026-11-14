@@ -42,14 +42,19 @@ def get(url: str) -> str:
         return resp.read().decode()
 
 
-def pick_product(key: str, sensor: str) -> str:
-    """Use standard processing (SP) where it covers the whole window, otherwise near real time (NRT)."""
-    rows = list(csv.DictReader(io.StringIO(get(f"{API}/data_availability/csv/{key}/all"))))
+def availability(key: str) -> dict[str, tuple[str, str]]:
+    """FIRMS product id -> (first date, last date) it covers."""
+    rows = csv.DictReader(io.StringIO(get(f"{API}/data_availability/csv/{key}/all")))
+    return {r["data_id"]: (r["min_date"], r["max_date"]) for r in rows}
+
+
+def product_for(avail: dict, sensor: str, day: date) -> str:
+    """Standard processing (SP) where it reaches, near real time (NRT) after it ends."""
     for suffix in ("SP", "NRT"):
-        for r in rows:
-            if r["data_id"] == f"{sensor}_{suffix}" and r["min_date"] <= START.isoformat() and r["max_date"] >= END.isoformat():
-                return r["data_id"]
-    raise SystemExit(f"no {sensor} product covers {START} to {END}: {[r['data_id'] for r in rows]}")
+        span = avail.get(f"{sensor}_{suffix}")
+        if span and span[0] <= day.isoformat() <= span[1]:
+            return f"{sensor}_{suffix}"
+    raise SystemExit(f"no {sensor} product covers {day}")
 
 
 def fetch(key: str) -> list[list]:
@@ -58,16 +63,19 @@ def fetch(key: str) -> list[list]:
         return json.loads(CACHE.read_text())
     area = f"{mosaic.WEST},{mosaic.SOUTH},{mosaic.EAST},{mosaic.NORTH}"
     points = []
+    avail = availability(key)
     for sensor in SOURCES:
-        product = pick_product(key, sensor)
         day = START
         while day <= END:
-            text = get(f"{API}/area/csv/{key}/{product}/{area}/{DAYS_PER_CALL}/{day.isoformat()}")
+            product = product_for(avail, sensor, day)
+            last = min(day + timedelta(days=DAYS_PER_CALL - 1), date.fromisoformat(avail[product][1]))
+            n = (last - day).days + 1  # never let one call run past the product's last day
+            text = get(f"{API}/area/csv/{key}/{product}/{area}/{n}/{day.isoformat()}")
             for r in csv.DictReader(io.StringIO(text)):
                 if r.get("confidence", "n") != "l":  # drop low-confidence VIIRS detections
                     points.append([round(float(r["latitude"]), 4), round(float(r["longitude"]), 4), r["acq_date"]])
-            day += timedelta(days=DAYS_PER_CALL)
-        print(sensor, product, len(points))
+            day = last + timedelta(days=1)
+        print(sensor, len(points))
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_text(json.dumps(points))
     return points
@@ -90,12 +98,23 @@ def agreement(points: list[list]) -> tuple[float, float]:
     return float(near[lost].mean()), float(near[forest].mean())
 
 
+def thin(points: list[list], cell: float = 0.02) -> list[list]:
+    """For the map: keep the first detection in each cell (about 2 km), so the browser draws tens of thousands of dots, not 600k."""
+    first: dict[tuple[int, int], list] = {}
+    for lat, lon, d in points:
+        k = (round(lat / cell), round(lon / cell))
+        if k not in first or d < first[k][2]:
+            first[k] = [round(k[0] * cell, 2), round(k[1] * cell, 2), d]
+    return sorted(first.values(), key=lambda p: p[2])
+
+
 def main() -> None:
     """Fetch, score, write firms.json."""
     points = fetch(map_key())
     in_loss, in_forest = agreement(points)
     out = {
-        "points": points,
+        "points": thin(points),
+        "detections": len(points),
         "near_km": NEAR_KM,
         "loss_near": round(in_loss, 3),
         "forest_near": round(in_forest, 3),
