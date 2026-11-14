@@ -76,8 +76,8 @@ def load_tf(recs: list[dict], lon: np.ndarray, lat: np.ndarray, layer: str,
     looks = []
     for r in recs:
         path = RAW / f"{r['key']}_{layer}.png"
-        if not path.exists():
-            continue
+        if not path.exists() or not (RAW / f"{r['key']}_HVHV.png").exists():
+            continue  # the HV image also sets the valid-data mask for HH
         img = np.asarray(Image.open(path).convert("L"))
         hv_path = RAW / f"{r['key']}_HVHV.png"
         valid = img > 0 if layer == "HVHV" else np.asarray(Image.open(hv_path).convert("L")) > 0

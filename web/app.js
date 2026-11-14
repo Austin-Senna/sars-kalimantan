@@ -5,7 +5,8 @@
   const bounds = L.latLngBounds(meta.bounds);
   const KETAPANG = meta.ketapang || [-2.2, 110.3];
 
-  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: bounds.pad(0.3) });
+  // Canvas rendering: tens of thousands of fire dots stay smooth while scrubbing.
+  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: bounds.pad(0.3), preferCanvas: true });
   const narrow = () => window.innerWidth <= 700;
   const fit = () => map.fitBounds(bounds, narrow()
     ? { paddingBottomRight: [0, window.innerHeight * 0.5] }
