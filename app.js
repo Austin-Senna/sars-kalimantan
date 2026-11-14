@@ -21,6 +21,7 @@
   L.imageOverlay("data/basemap.jpg", bounds, { opacity: 0.55 }).addTo(map);
   L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.85, className: "pixelated" }).addTo(map);
   const forest = L.imageOverlay("data/forest.png", bounds).addTo(map);
+  const peat = L.imageOverlay("data/peat.png", bounds, { className: "pixelated" });
 
   map.createPane("loss").style.zIndex = 420;  // above the fire dots (410), which sit above the radar base (400)
   // One overlay per step, all preloaded, only the current one visible: scrubbing never waits on the network.
@@ -57,6 +58,8 @@
       const r = (v) => v.toFixed(v < 10 ? 1 : 0);
       document.getElementById("co2label").textContent = s.co2_mt ? `Mt CO₂ from burning peat (IPCC range ${r(s.co2_lo)} to ${r(s.co2_hi)})` : "Mt CO₂ from burning peat";
       document.getElementById("co2wrap").title = meta.co2_note || "";
+      document.getElementById("cars").textContent = s.cars_m >= 0.05
+        ? `About as much as ${s.cars_m.toFixed(1)} million cars give off in a year` : "";
     }
     slider.value = i;
     drawFires();
@@ -91,6 +94,7 @@
   });
   slider.addEventListener("input", () => show(+slider.value));
   document.getElementById("tForest").addEventListener("change", (e) => e.target.checked ? forest.addTo(map) : forest.remove());
+  document.getElementById("tPeat").addEventListener("change", (e) => e.target.checked ? peat.addTo(map) : peat.remove());
   document.getElementById("tFires").addEventListener("change", (e) => { e.target.checked ? fires.addTo(map) : fires.remove(); drawFires(); });
 
   // Click probe: per-step HV and HH brightness from the probe PNGs.
@@ -114,19 +118,20 @@
   loadProbe();
 
   let probeAt = null;
-  const marker = L.circleMarker([0, 0], { radius: 7, color: "#fff", weight: 2, fill: false });
+  map.createPane("probe").style.zIndex = 600;  // the click marker sits above every layer
+  const marker = L.circleMarker([0, 0], { radius: 9, color: "#fff", weight: 2.5, fill: false, pane: "probe", renderer: L.svg({ pane: "probe" }) });
   function sampleAt(latlng) {
     const x = Math.floor((latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest()) * probe.w);
     const y = Math.floor((bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth()) * probe.h);
     if (x < 0 || y < 0 || x >= probe.w || y >= probe.h) return null;
     const k = (y * probe.w + x) * 4;
-    const v = (arr) => arr.map((d) => (d[k + 3] ? d[k] : null));
+    const mid = (s) => new Date(Date.parse(s.start) + 6 * 864e5).toISOString().slice(0, 10);
+    const v = (arr) => arr.map((d, i) => (d[k + 3] ? [mid(steps[i]), d[k]] : null)).filter(Boolean);
     return { hv: v(probe.hv), hh: v(probe.hh) };
   }
-  function openProbe(latlng, title) {
-    if (!probe.ready) return;
-    const s = sampleAt(latlng);
-    if (!s || s.hv.every((v) => v == null)) return;
+  function openProbe(latlng, title, series) {
+    const s = series || (probe.ready ? sampleAt(latlng) : null);
+    if (!s || !s.hv.length) return;
     probeAt = s;
     marker.setLatLng(latlng).addTo(map);
     document.getElementById("probeTitle").textContent = title || `${latlng.lat.toFixed(2)}°, ${latlng.lng.toFixed(2)}°`;
@@ -137,24 +142,41 @@
   document.getElementById("probeClose").addEventListener("click", () => { document.getElementById("probe").hidden = true; marker.remove(); probeAt = null; });
   document.getElementById("jump").addEventListener("click", () => {
     map.flyTo(KETAPANG, 10, { duration: 1.2 });
-    map.once("moveend", () => openProbe(L.latLng(KETAPANG), "Ketapang peat dome"));
+    // The Ketapang chart is the burn itself: its burned pixels only, from one radar pass, at each real look date.
+    map.once("moveend", () => openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series));
   });
+  if (meta.ketapang_km2) {
+    document.getElementById("jumpNote").textContent =
+      `Biggest burn in West Kalimantan: ${Math.round(meta.ketapang_km2)} km², #${meta.ketapang_rank} on the island.`;
+  }
 
   function drawChart() {
     if (!probeAt) return;
     const svg = document.getElementById("chart");
     const W = 300, H = 130, l = 26, r = 6, t = 8, b = 22;
-    const n = steps.length;
-    const xs = (i) => l + (i / (n - 1)) * (W - l - r);
-    const ys = (v) => t + (1 - v / 255) * (H - t - b);
-    const path = (vals) => vals.map((v, i) => (v == null ? null : `${xs(i)},${ys(v)}`)).filter(Boolean).map((p, i) => (i ? "L" : "M") + p).join("");
-    const months = steps.map((s, i) => [i, s.start]).filter(([i, d]) => i === 0 || d.slice(5, 7) !== steps[i - 1].start.slice(5, 7));
+    const t0 = Date.parse(steps[0].start), t1 = Date.parse(steps[steps.length - 1].end);
+    const xs = (d) => l + ((Date.parse(d) - t0) / (t1 - t0)) * (W - l - r);
+    // Zoom the y axis to the data so a real drop is visible; the axis is relative brightness, not zero-based.
+    const vals = [...probeAt.hv, ...probeAt.hh].map((p) => p[1]);
+    const pad = Math.max(8, (Math.max(...vals) - Math.min(...vals)) * 0.15);
+    const lo = Math.max(0, Math.min(...vals) - pad), hi = Math.min(255, Math.max(...vals) + pad);
+    const ys = (v) => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
+    const path = (pts) => pts.map(([d, v], i) => (i ? "L" : "M") + `${xs(d)},${ys(v)}`).join("");
+    const dots = (pts, cls) => pts.map(([d, v]) => `<circle class="${cls}" cx="${xs(d)}" cy="${ys(v)}" r="2"/>`).join("");
+    const months = steps.map((s) => s.start.slice(0, 7)).filter((m, i, a) => a.indexOf(m) === i);
+    const now = steps[current].end;
     svg.innerHTML =
-      [0, 128, 255].map((v) => `<line class="grid" x1="${l}" x2="${W - r}" y1="${ys(v)}" y2="${ys(v)}"/>`).join("") +
-      `<text x="2" y="${ys(255) + 3}">bright</text><text x="2" y="${ys(0)}">dark</text>` +
-      months.map(([i, d]) => `<text x="${xs(i)}" y="${H - 6}">${new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
-      `<line class="now" x1="${xs(current)}" x2="${xs(current)}" y1="${t}" y2="${H - b}"/>` +
-      `<path class="hh" d="${path(probeAt.hh)}"/><path class="hv" d="${path(probeAt.hv)}"/>`;
+      [hi, (hi + lo) / 2, lo].map((v) => `<line class="grid" x1="${l}" x2="${W - r}" y1="${ys(v)}" y2="${ys(v)}"/>`).join("") +
+      `<text x="2" y="${ys(hi) + 3}">brighter</text><text x="2" y="${ys(lo)}">darker</text>` +
+      months.map((m) => `<text x="${xs(m + "-01") < l ? l : xs(m + "-01")}" y="${H - 6}">${new Date(m + "-15T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
+      `<line class="now" x1="${xs(now)}" x2="${xs(now)}" y1="${t}" y2="${H - b}"/>` +
+      `<path class="hh" d="${path(probeAt.hh)}"/><path class="hv" d="${path(probeAt.hv)}"/>` +
+      dots(probeAt.hh, "hh") + dots(probeAt.hv, "hv");
+    const first = probeAt.hv[0][1], last = probeAt.hv[probeAt.hv.length - 1][1];
+    const pct = Math.round((last - first) / first * 100);
+    document.getElementById("probeNote").textContent = pct <= -5
+      ? `Leaf echo (HV) is ${-pct}% below June by the last look.`
+      : `Leaf echo (HV) changed ${pct >= 0 ? "+" : ""}${pct}% since June: no clear canopy loss here.`;
   }
 
   window.addEventListener("resize", () => {});

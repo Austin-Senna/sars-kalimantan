@@ -20,7 +20,7 @@
     <section class="readout" aria-live="polite">
       <div class="date" id="date">June 17 to 28</div>
       <div class="stat"><span id="km2">0</span><small>km² of forest lost</small></div>
-      <div class="stat secondary" id="co2wrap" hidden><span id="co2">0</span><small id="co2label">Mt CO₂ from burning peat</small></div>
+      <div class="stat secondary" id="co2wrap" hidden><span id="co2">0</span><small id="co2label">Mt CO₂ from burning peat</small><small class="cars" id="cars"></small></div>
     </section>
 
     <section class="time">
@@ -30,6 +30,7 @@
 
     <section class="layers">
       <label><input type="checkbox" id="tForest" checked> Forest in June</label>
+      <label><input type="checkbox" id="tPeat"> Peat, where the CO₂ comes from</label>
       <label><input type="checkbox" id="tFires"> Fire detections (FIRMS)</label>
       <div class="agree" id="agree" hidden></div>
     </section>
@@ -40,11 +41,13 @@
         <button id="probeClose" type="button" aria-label="Close">×</button>
       </div>
       <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
+      <p class="probenote" id="probeNote"></p>
       <p class="legend"><span class="hv"></span>HV hears leaves and branches <span class="hh"></span>HH hears the ground and trunks</p>
     </section>
 
     <footer>
       <button id="jump" type="button">Ketapang peat dome →</button>
+      <small class="jumpnote" id="jumpNote"></small>
       <p class="limits">Relative brightness from NISAR browse images, not calibrated backscatter. Gaps are missing or partial NISAR frames.</p>
     </footer>
   </aside>

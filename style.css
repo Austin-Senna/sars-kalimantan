@@ -79,3 +79,9 @@ footer { margin-top: auto; display: grid; gap: 10px; }
   .lede { display: none; }
   .stat span { font-size: 38px; }
 }
+
+.stat small.cars { display: block; margin-top: 2px; color: var(--muted, #9aa3a0); font-size: 12px; }
+.jumpnote { display: block; margin-top: 6px; color: var(--muted, #9aa3a0); font-size: 12px; }
+#chart circle.hv { fill: var(--hv); stroke: none; }
+#chart circle.hh { fill: var(--hh); stroke: none; }
+.probenote { margin: 6px 0 0; font-size: 13px; color: var(--ink); }
