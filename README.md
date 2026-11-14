@@ -36,13 +36,15 @@ uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML Geo
 - **Loss:** baseline is the median of every look before Jul 23 (before the Aug to Oct fire season). A pixel counts as lost when its HV drops by more than 3 robust standard deviations of that track-frame's own date-to-date noise above the threshold, in two consecutive looks.
 - **Mask:** land of the island of Borneo, from the NASA Blue Marble basemap.
 - **Fire check:** 65% of the radar-loss area lies within 2 km of a NASA FIRMS VIIRS fire detection, against 34% of all forest. FIRMS standard processing to Jul 31, near real time after.
-- **CO2:** lost area on peat (Peat-ML peat fraction) x 353 t dry matter burnt per ha x 1.70 t CO2 per t (IPCC 2013 Wetlands Supplement, Tables 2.6 and 2.7, tropical drained-peat wildfire). The range uses the IPCC 95% interval for fuel burnt. Peat only: the trees above it are not counted.
+- **CO2:** lost area on peat (Peat-ML peat fraction) x 353 t dry matter burnt per ha x 1.70 t CO2 per t (IPCC 2013 Wetlands Supplement, Tables 2.6 and 2.7, tropical drained-peat wildfire). The range uses the IPCC 95% interval for fuel burnt. Peat only: the trees above it are not counted. For scale, the panel converts it to cars at 4.6 t CO2 per car per year (US EPA). The "Peat" layer shows the Peat-ML peat share, so red on brown is where the CO2 comes from.
+- **Ketapang chart:** the burned pixels of the largest loss cluster in West Kalimantan (38 km², 6th on the island), from the single track-frame with the most looks over it, each look matched to that frame's own baseline. Leaf echo (HV) falls 20% from June to Oct 10. Clicks elsewhere use a coarser 1 km, multi-pass composite.
 
 ## Limits
 
 - Values are relative browse brightness, not calibrated backscatter.
 - July reads zero by construction: it is part of the baseline.
 - Gaps on the map are missing or partial NISAR frames.
+- The NISAR provisional archive ends at Oct 21, 2026 (checked Nov 14), so the map ends there.
 - The CO2 figure assumes every lost pixel on peat burned to the IPCC default depth. Peat-ML is a 1/12 degree (about 9 km) map, so the peat share is coarse.
 
 ## Sources
@@ -52,6 +54,7 @@ uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML Geo
 - NASA FIRMS VIIRS active fire detections: https://firms.modaps.eosdis.nasa.gov/
 - Peat-ML global peatland extent, Melton et al. (2022), CC-BY 4.0: https://doi.org/10.5281/zenodo.7352284
 - IPCC (2014), 2013 Supplement to the 2006 IPCC Guidelines: Wetlands, Chapter 2, Tables 2.6 and 2.7: https://www.ipcc-nggip.iges.or.jp/public/wetlands/
+- US EPA, Greenhouse Gas Emissions from a Typical Passenger Vehicle: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
 - Basemap: NASA Blue Marble via GIBS: https://gibs.earthdata.nasa.gov/
 - Leaflet 1.9.4 (BSD-2-Clause): https://leafletjs.com/
 

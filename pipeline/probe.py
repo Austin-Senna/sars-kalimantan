@@ -66,27 +66,76 @@ def main() -> None:
     write_ketapang()
 
 
+def burn_series(mask: np.ndarray) -> dict | None:
+    """HV and HH over one burn, from the single track-frame with the most looks over it.
+
+    Averages the burned pixels only (mask, on the 0.0025 degree grid), every look matched to that frame's own
+    pre-season baseline, so neither the stretch nor a change of viewing geometry shows up as change.
+    """
+    inv = json.loads((mosaic.ROOT / "data" / "inventory.json").read_text())
+    by_tf: dict[str, list[dict]] = {}
+    for r in inv:
+        by_tf.setdefault(r["tf"], []).append(r)
+    glon, glat = mosaic.grid()
+    rr, cc = np.nonzero(mask)
+    best = None
+    for tf, recs in sorted(by_tf.items()):
+        rows, cols = mosaic.window(recs)
+        if not (rows.start <= rr.min() and rr.max() < rows.stop and cols.start <= cc.min() and cc.max() < cols.stop):
+            continue
+        lon, lat = glon[rows, cols], glat[rows, cols]
+        burn = mask[rows, cols]
+        out = {}
+        for layer in ("HVHV", "HHHH"):
+            looks = mosaic.load_tf(recs, lon, lat, layer)
+            early = [a for d, a in looks if d < mosaic.BASELINE_END]
+            if len(early) < 1:
+                break
+            with np.errstate(all="ignore"):
+                base = np.nanmedian(early, axis=0)
+            ref = base > np.nanpercentile(base, mosaic.FOREST_PCT)
+            pts = []
+            for d, a in looks:
+                m = mosaic.match(a, base, ref)[burn]
+                if np.isfinite(m).mean() > 0.8:
+                    pts.append((d.isoformat(), round(float(np.nanmean(m)), 1)))
+            out[layer] = pts
+        if len(out) == 2 and len(out["HVHV"]) > (len(best["hv"]) if best else 0):
+            best = {"tf": tf, "hv": out["HVHV"], "hh": out["HHHH"]}
+        print(tf, {k: len(v) for k, v in out.items()})
+    return best
+
+
 def write_ketapang() -> None:
-    """Find the largest loss cluster in the Ketapang box at the last step and store its centre."""
+    """Find the largest loss cluster in the Ketapang box at the last step; store its centre, size and island rank."""
     cached = np.load(mosaic.WORK / "mosaic.npz")
     last = cached["score"][-1].astype(np.float32)
     glon, glat = mosaic.grid()
+    land = mosaic.borneo_mask(last.shape)
+    lost = land & np.isfinite(last) & (last > mosaic.LOSS_MIN)
+    km2_px = (mosaic.RES * 111.32) ** 2 * np.cos(np.radians(glat))
+    labels, count = label(lost, structure=np.ones((3, 3)))  # 8-connected: diagonal pixels belong to one burn
+    if not count:
+        print("no loss clusters")
+        return
+    sizes = np.bincount(labels.ravel(), weights=km2_px.ravel())[1:]
     w, e, s, n = KETAPANG_BOX
     box = (glon >= w) & (glon <= e) & (glat >= s) & (glat <= n)
-    lost = box & np.isfinite(last) & (last > mosaic.LOSS_MIN)
-    labels, count = label(lost)
-    if not count:
-        print("no loss cluster in the Ketapang box")
-        return
-    biggest = np.bincount(labels.ravel())[1:].argmax() + 1
+    inside = np.unique(labels[box & lost])
+    biggest = inside[np.argmax(sizes[inside - 1])]
     rr, cc = np.nonzero(labels == biggest)
     point = [round(float(glat[rr, cc].mean()), 4), round(float(glon[rr, cc].mean()), 4)]
+    km2 = float(sizes[biggest - 1])
+    rank = int((sizes > km2).sum()) + 1
     meta_path = mosaic.WEB / "steps.json"
     meta = json.loads(meta_path.read_text())
     meta["ketapang"] = point
+    meta["ketapang_km2"] = round(km2, 1)
+    meta["ketapang_rank"] = rank
+    meta["ketapang_series"] = burn_series(labels == biggest)
     meta_path.write_text(json.dumps(meta, indent=1))
-    print("Ketapang cluster", point, f"{len(rr)} px")
-
+    print("Ketapang cluster", point, f"{km2:.1f} km2, rank {rank} of {count} on the island")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    write_ketapang() if sys.argv[1:] == ["--ketapang"] else main()
