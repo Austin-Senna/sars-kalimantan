@@ -21,8 +21,7 @@
 
   if (meta.smoke) L.imageOverlay("data/basemap_region.jpg", region, { opacity: 0.55 }).addTo(map);  // Sumatra to Sulawesi
   else L.imageOverlay("data/basemap.jpg", bounds, { opacity: 0.55 }).addTo(map);
-  L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.85, className: "pixelated" }).addTo(map);
-  const forest = L.imageOverlay("data/forest.png", bounds).addTo(map);
+  const radarBase = L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.9, className: "pixelated" }).addTo(map);
   const peat = L.imageOverlay("data/peat.png", bounds, { className: "pixelated" });
 
   map.createPane("loss").style.zIndex = 420;  // above the fire dots (410), which sit above the radar base (400)
@@ -48,6 +47,11 @@
   function drawSmoke() {
     const on = document.getElementById("tSmoke").checked;
     smoke.forEach((o, j) => o.setOpacity(on && j === current ? 1 : 0));
+    // Smoke on is the view a normal satellite has: the radar layers step aside until it is turned off.
+    radarBase.setOpacity(on ? 0 : 0.9);
+    map.getPane("loss").style.opacity = on ? 0 : 1;
+    map.getPane("peatburn").style.opacity = on ? 0 : 1;
+    map.getPane("fires").style.opacity = on ? 0 : 0.45;
     for (const [c, m, name] of cityMarkers) {
       const v = c.aod[current];
       const level = v == null ? "none" : v >= 1 ? "thick" : v >= 0.3 ? "hazy" : "clear";
@@ -118,7 +122,6 @@
     }, 900);
   });
   slider.addEventListener("input", () => show(+slider.value));
-  document.getElementById("tForest").addEventListener("change", (e) => e.target.checked ? forest.addTo(map) : forest.remove());
   document.getElementById("tPeat").addEventListener("change", (e) => { e.target.checked ? peat.addTo(map) : peat.remove(); show(current); });
   document.getElementById("tSmoke").addEventListener("change", (e) => {
     document.getElementById("smokeNote").hidden = !e.target.checked;

@@ -14,7 +14,7 @@
     <header>
       <p class="kicker">NISAR L-band radar · Indonesian Borneo · 2026</p>
       <h1>Borneo through the smoke</h1>
-      <p class="lede">Red is forest whose radar echo collapsed since June: canopy the satellite stopped hearing.</p>
+      <p class="lede"><span class="key green"></span>Green is tree cover in June. <span class="key red"></span>Red is canopy whose radar echo collapsed since: trees the satellite stopped hearing. <span class="key grey"></span>Grey had no tree cover.</p>
     </header>
 
     <section class="readout" aria-live="polite">
@@ -29,11 +29,10 @@
     </section>
 
     <section class="layers">
-      <label><input type="checkbox" id="tForest" checked> Forest in June</label>
       <label><input type="checkbox" id="tPeat"> Peat: dark = burned peat (the CO₂)</label>
       <label><input type="checkbox" id="tFires"> Fire detections (FIRMS)</label>
       <label><input type="checkbox" id="tSmoke"> Smoke over the region (NASA VIIRS)</label>
-      <p class="smokenote" id="smokeNote" hidden>Haze is what normal satellites see. Numbers are aerosol optical depth: under 0.3 is clear, over 1 is thick smoke.</p>
+      <p class="smokenote" id="smokeNote" hidden>Haze is what normal satellites see. Holes are filled from the steps either side and nearby readings. Numbers are aerosol optical depth: under 0.3 is clear, over 1 is thick smoke.</p>
       <div class="agree" id="agree" hidden></div>
     </section>
 

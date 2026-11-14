@@ -184,10 +184,16 @@ def write() -> None:
     score, base = cached["score"].astype(np.float32), cached["base"]
     land = borneo_mask(base.shape)
     glat = grid()[1]
-    shade = np.nan_to_num(base * 0.8, nan=0).clip(0, 255).astype(np.uint8)
-    alpha = np.where(land & np.isfinite(base), 255, 0).astype(np.uint8)
-    Image.fromarray(np.dstack([shade, shade, shade, alpha])).save(WEB / "base_hv.png", optimize=True)
+    # Base: June forest in green, shaded by its radar brightness; everything else (farms, plantations, towns,
+    # land already cleared) in dark grey. Red loss then reads against green.
     forest = cached["forest"] & land
+    lum = np.nan_to_num(base / 255, nan=0).clip(0, 1)
+    rgb = np.zeros((*base.shape, 3), np.float32)
+    rgb[forest] = np.outer(0.55 + 0.6 * lum[forest], (46, 112, 72))
+    other = ~forest
+    rgb[other] = np.outer(0.35 + 0.6 * lum[other], (88, 92, 90))
+    alpha = np.where(land & np.isfinite(base), 255, 0).astype(np.uint8)
+    Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha])).save(WEB / "base_hv.png", optimize=True)
     rgba = np.zeros((*forest.shape, 4), np.uint8)
     rgba[forest] = (126, 224, 190, 38)
     Image.fromarray(rgba).save(WEB / "forest.png", optimize=True)

@@ -94,3 +94,7 @@ footer { margin-top: auto; display: grid; gap: 10px; }
 .city.thick { border-left-color: #ff5a36; }
 .city.none { border-left-color: #556; color: var(--muted); font-weight: 400; }
 @media (max-width: 700px) { .city { font-size: 10px; padding: 2px 5px; } }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 5px 0 2px; vertical-align: 0; }
+.key.green { background: #3f7a52; }
+.key.red { background: #ff3a28; }
+.key.grey { background: #5a5e5c; }

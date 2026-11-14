@@ -1,7 +1,7 @@
 """Regional smoke: VIIRS Deep Blue aerosol optical depth (AOD) per 12-day step, Borneo to Singapore and Kuala Lumpur.
 
 Fetches the daily GIBS images for Suomi-NPP and NOAA-20 over SMOKE_BOX, turns each colour back into its AOD value
-with the GIBS colormap (MODIS_VIIRS_AOD), and averages every valid day in a step. AOD is how much sunlight the haze
+with the GIBS colormap (MODIS_VIIRS_AOD), and averages every valid day in a step, then fills holes from the steps either side and from readings up to about 40 km away. AOD is how much sunlight the haze
 blocks: under 0.3 is clear, above 1 is thick smoke. Writes web/data/smoke_SS.png and adds "smoke" to steps.json
 (bounds, and the AOD at a few cities per step). Run after mosaic.py.
 """
@@ -68,6 +68,22 @@ def decode(img: np.ndarray, lut: dict) -> np.ndarray:
     return out
 
 
+def fill(a: np.ndarray, sigma: float = 3.0, reach: float = 16.0) -> np.ndarray:
+    """Smooth the step mean and fill cloud holes from nearby readings (NaN-aware Gaussian).
+
+    sigma (pixels of 0.025 degrees) evens out the per-swath blockiness; reach fills holes up to about 40 km
+    from the nearest reading. Pixels farther from any reading stay NaN: no value is made up there.
+    """
+    from scipy.ndimage import gaussian_filter
+    ok = np.isfinite(a)
+    num, den = gaussian_filter(np.where(ok, a, 0), sigma), gaussian_filter(ok.astype(np.float32), sigma)
+    wide_num, wide_den = gaussian_filter(np.where(ok, a, 0), reach), gaussian_filter(ok.astype(np.float32), reach)
+    with np.errstate(all="ignore"):
+        near = np.where(den > 0.2, num / den, np.nan)
+        far = np.where(wide_den > 0.15, wide_num / wide_den, np.nan)
+    return np.where(np.isfinite(near), near, far).astype(np.float32)
+
+
 def main() -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
     lut = colormap()
@@ -91,18 +107,24 @@ def main() -> None:
         sums[s][ok] += aod[ok]
         counts[s][ok] += 1
     cities = {name: [] for name in CITIES}
-    for s in range(len(meta["steps"])):
+    with np.errstate(all="ignore"):
+        raw = sums / counts
+    n = len(meta["steps"])
+    for s in range(n):
+        # Holes (cloud, or smoke too thick to retrieve) take the mean of the steps either side before the spatial fill.
         with np.errstate(all="ignore"):
-            mean = sums[s] / counts[s]
-        # Haze palette: warm grey, opacity grows with AOD from 0.3 (clear) to 2 (thick smoke).
-        t = np.nan_to_num(np.clip((mean - 0.3) / 1.7, 0, 1), nan=0)
+            nb = np.nanmean(raw[max(0, s - 1):min(n, s + 2)], axis=0)
+        mean = fill(np.where(np.isfinite(raw[s]), raw[s], nb))
+        # Smoke palette: clear below AOD 0.3; pale tan haze at 1; dark brown-grey smoke at 3 and above.
+        t = np.nan_to_num(np.clip((mean - 0.3) / 2.7, 0, 1), nan=0)
+        light, dark = np.array([226, 205, 160], np.float32), np.array([96, 74, 56], np.float32)
         rgba = np.zeros((H, W, 4), np.uint8)
-        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 214, 200, 182
-        rgba[..., 3] = (t ** 0.7 * 210).astype(np.uint8)
+        rgba[..., :3] = (light + (dark - light) * t[..., None] ** 0.8).astype(np.uint8)
+        rgba[..., 3] = np.where(np.isfinite(mean), (np.clip((mean - 0.3) / 1.2, 0, 1) ** 0.8 * 225), 0).astype(np.uint8)
         Image.fromarray(rgba).save(mosaic.WEB / f"smoke_{s:02d}.png", optimize=True)
         for name, (lat, lon) in CITIES.items():
             r, c = int((NORTH - lat) / 0.025), int((lon - WEST) / 0.025)
-            win = mean[max(0, r - 8):r + 9, max(0, c - 8):c + 9]  # about 45 km around the city
+            win = mean[max(0, r - 4):r + 5, max(0, c - 4):c + 5]  # about 25 km around the city, on the filled field
             v = float(np.nanmean(win)) if np.isfinite(win).any() else None
             cities[name].append(round(v, 2) if v is not None else None)
         print(s, {n: v[-1] for n, v in cities.items()}, f"coverage {(counts[s] > 0).mean():.0%}")
