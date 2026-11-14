@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Borneo Through the Smoke</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map" aria-label="Map of Indonesian Borneo"></div>
+
+  <aside id="panel">
+    <header>
+      <p class="kicker">NISAR L-band radar · Indonesian Borneo · 2026</p>
+      <h1>Borneo through the smoke</h1>
+      <p class="lede">Red is forest whose radar echo collapsed since June: canopy the satellite stopped hearing.</p>
+    </header>
+
+    <section class="readout" aria-live="polite">
+      <div class="date" id="date">June 17 to 28</div>
+      <div class="stat"><span id="km2">0</span><small>km² of forest lost</small></div>
+      <div class="stat secondary" id="co2wrap" hidden><span id="co2">0</span><small id="co2label">Mt CO₂, rough estimate</small></div>
+    </section>
+
+    <section class="time">
+      <button id="play" type="button" aria-label="Play">▶</button>
+      <input id="slider" type="range" min="0" max="0" value="0" aria-label="12-day step">
+    </section>
+
+    <section class="layers">
+      <label><input type="checkbox" id="tForest" checked> Forest in June</label>
+      <label><input type="checkbox" id="tFires"> Fire detections (FIRMS)</label>
+      <div class="agree" id="agree" hidden></div>
+    </section>
+
+    <section class="probe" id="probe" hidden>
+      <div class="probe-head">
+        <strong id="probeTitle">This spot</strong>
+        <button id="probeClose" type="button" aria-label="Close">×</button>
+      </div>
+      <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
+      <p class="legend"><span class="hv"></span>HV hears leaves and branches <span class="hh"></span>HH hears the ground and trunks</p>
+    </section>
+
+    <footer>
+      <button id="jump" type="button">Ketapang peat dome →</button>
+      <p class="limits">Relative brightness from NISAR browse images, not calibrated backscatter. Gaps are missing or partial NISAR frames.</p>
+    </footer>
+  </aside>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
