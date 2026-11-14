@@ -32,7 +32,9 @@
   L.imageOverlay("data/base_hv.png", bounds, { pane: "radar", className: "pixelated fadetop" }).addTo(map);
   L.imageOverlay("data/peat.png", bounds, { pane: "peat" }).addTo(map);  // smoothed: the peat map's 9 km cells read as blocks otherwise
   // One overlay per step for each time layer, all preloaded; only the current step is visible.
-  const perStep = (prefix, b, p, cls) => steps.map((s) => L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p, className: cls }).addTo(map));
+  // One retry with a cache-buster if an image fails (a busy CDN can answer 503 once); otherwise a step stays blank.
+  const retry = (o) => o.once("error", () => setTimeout(() => o.setUrl(`${o._url.split("?")[0]}?r=${Date.now()}`), 1500));
+  const perStep = (prefix, b, p, cls) => steps.map((s) => { const o = L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p, className: cls }); retry(o); return o.addTo(map); });
   const loss = perStep("loss", bounds, "loss", "pixelated");
   const peatburn = perStep("peatburn", bounds, "peatburn", "pixelated");
   const smoke = meta.smoke ? perStep("smoke", region, "smoke", "feather") : [];
@@ -55,7 +57,7 @@
   const level = (v) => v == null ? "none" : view.gas === "co"
     ? (v >= 200 ? "thick" : v >= 110 ? "hazy" : "clear")   // CO: June is about 80 ppbv
     : (v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear");    // haze: matches the scale bar
-  const fmtReading = (v) => v == null ? "no reading" : view.gas === "co" ? `${v} ppb` : v.toFixed(1);
+  const fmtReading = (v) => v == null ? "no reading" : view.gas === "co" ? (narrow() ? `${v}` : `${v} ppb`) : v.toFixed(1);
   let current = 0;
   function render() {
     const show = (el, on, o = 1) => { el.style.opacity = on ? o : 0; };
@@ -105,7 +107,7 @@
       co2short: s.co2_mt ? `${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)}` : "",
       cars: s.cars_m >= 0.05 ? `like ${s.cars_m.toFixed(1)} million cars for a year` : "",
       cities: cityMarkers.filter((x) => reading(x.name, i) != null).sort((a, b) => reading(b.name, i) - reading(a.name, i)).slice(0, 3)
-        .map((x) => `${x.name} <b>${fmtReading(reading(x.name, i))}</b>`).join(" · ") || "no readings this step",
+        .map((x, j) => `<span class="cv">${j ? "· " : ""}${x.name} <b>${fmtReading(reading(x.name, i))}</b></span>`).join(" ") || "no readings this step",
     };
     document.querySelectorAll("[data-live]").forEach((el) => { el.innerHTML = live[el.dataset.live] ?? ""; });
     render();
@@ -136,7 +138,9 @@
   // --- Probe chart.
   let probeAt = null;
   const probe = { hv: [], hh: [], forest: null, loss: null, w: 0, h: 0, ready: false };
-  (async () => {
+  let probeStarted = false;
+  async function loadProbe() {  // 24 history images (27 MB): fetched on first use, not at startup
+    if (probeStarted) return; probeStarted = true;
     const load = (src) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src; });
     const read = (im) => {
       const c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
@@ -151,8 +155,8 @@
       probe.forest = read(await load("data/probe_forest.png"));
       probe.loss = read(await load("data/probe_loss.png"));
       probe.ready = true;
-    } catch (e) { /* no probe layers: clicks do nothing */ }
-  })();
+    } catch (e) { probeStarted = false; /* a failed image: the next click tries again */ }
+  }
   function sampleAt(latlng) {
     const x = Math.floor((latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest()) * probe.w);
     const y = Math.floor((bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth()) * probe.h);
@@ -169,7 +173,8 @@
     }
     return { hv: v(probe.hv), hh: v(probe.hh), flagged };
   }
-  function openProbe(latlng, title, series, quiet) {
+  async function openProbe(latlng, title, series, quiet) {
+    if (!series && !probe.ready) { $("probe").hidden = false; $("probeTitle").textContent = "Loading radar history…"; $("chart").innerHTML = ""; $("probeNote").textContent = ""; await loadProbe(); }
     const s = series || (probe.ready ? sampleAt(latlng) : null);
     if (s && s.none) {
       marker.remove(); probeAt = null;
@@ -192,7 +197,7 @@
     const el = $("probe");
     el.hidden = false;
     el.style.scrollMarginBottom = `${document.querySelector(".dock").offsetHeight + 12}px`;
-    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "end" }));
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }
   function closeProbe() { $("probe").hidden = true; marker.remove(); probeAt = null; }
   map.on("click", (e) => {
@@ -213,7 +218,7 @@
     const rel = (pts) => pts.map(([d, v]) => [d, (v - pts[0][1]) / pts[0][1] * 100]);
     const hv = rel(probeAt.hv), hh = rel(probeAt.hh);
     const vals = [...hv, ...hh].map((p) => p[1]);
-    const lo = Math.min(-25, Math.floor(Math.min(...vals) / 5) * 5 - 5), hi = Math.max(25, Math.ceil(Math.max(...vals) / 5) * 5 + 5);
+    const lo = Math.min(-25, Math.floor(Math.min(...vals) / 5) * 5 - 5), hi = Math.max(5, Math.ceil(Math.max(...vals) / 5) * 5 + 5);
     const ys = (v) => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
     const path = (pts) => pts.map(([d, v], i) => (i ? "L" : "M") + `${xs(d)},${ys(v)}`).join("");
     const dots = (pts, cls) => pts.map(([d, v]) => `<circle class="${cls}" cx="${xs(d)}" cy="${ys(v)}" r="2"/>`).join("");
@@ -226,7 +231,7 @@
         `<text x="${l - 3}" y="${ys(v) + 3}" text-anchor="end">${v > 0 ? "+" : ""}${v}%</text>`).join("") +
       months.slice(1).map((m) => `<text x="${xs(m + "-01")}" y="${H - 6}" text-anchor="middle">${new Date(m + "-15T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
       `<line class="now" x1="${xs(now)}" x2="${xs(now)}" y1="${t}" y2="${H - b}"/>` +
-      `<text x="${W - r}" y="${t + 8}" text-anchor="end">change since June</text>` +
+      `<text x="${l + 4}" y="${t + 8}">change since June</text>` +
       `<path class="hh" d="${path(hh)}"/><path class="hv" d="${path(hv)}"/>` + dots(hh, "hh") + dots(hv, "hv");
     // The verdict follows the loss map, so the chart never contradicts the red; the % is context.
     const upto = hv.filter(([d]) => d <= now);
@@ -244,7 +249,8 @@
     const [la, lo] = KETAPANG;
     flyTo(L.latLngBounds([[la - 0.25, lo - 0.3], [la + 0.25, lo + 0.3]]), { duration: 1.4 });  // centred in the visible map
     if (arrive) map.off("moveend", arrive);
-    arrive = () => { arrive = null; openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series, chapter < EXPLORE && !narrow()); };
+    arrive = () => { arrive = null; openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series, chapter < EXPLORE);
+    if (chapter < EXPLORE && narrow()) document.querySelector("#chWidget .big")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
     map.once("moveend", arrive);
   };
 
@@ -358,7 +364,9 @@
     const b = e.target.closest("[data-gas]");
     if (!b) return;
     view.gas = b.dataset.gas;
-    setStep(current);
+    stop();
+    // October is near the top of the CO scale everywhere; mid-September shows the plume's shape.
+    setStep(view.gas === "co" && chapter === 0 ? 7 : current);
   });
 
   // Explore controls.

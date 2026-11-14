@@ -203,7 +203,8 @@ def write() -> None:
     fade = round(0.4 / RES)  # the grid stops at 4.4 N inside Sabah: fade the top 0.4 degrees instead of a hard edge
     alpha[:fade] *= np.linspace(0, 1, fade)[:, None]
     alpha = alpha.astype(np.uint8)
-    Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha])).save(WEB / "base_hv.png", optimize=True)
+    # 128-colour palette: the base is two hues with texture, so this looks the same at a fraction of 11 MB.
+    Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha])).quantize(128, method=Image.Quantize.FASTOCTREE).save(WEB / "base_hv.png", optimize=True)
     # Tree-cover mask at the click-chart resolution (0.01 degrees): the app only draws a chart where there was tree cover.
     k = 4  # 0.0025 -> 0.01 degrees
     h, w = (forest.shape[0] // k) * k, (forest.shape[1] // k) * k

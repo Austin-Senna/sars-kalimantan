@@ -247,8 +247,8 @@ def write_layers(points: list[list]) -> None:
         dens_hit = gaussian_filter(binary_dilation(hit, iterations=2).astype(np.float32), 3)
         a_hit = np.clip(dens_hit * 3, 0, 1)
         rgba = np.zeros((*shape, 4), np.uint8)
-        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 255, 170, 50        # other fires: warm orange, see-through (reads as fire, not khaki)
-        rgba[..., 3] = (a_all * 95).astype(np.uint8)
+        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 255, 110, 20        # other fires: saturated orange; weaker mixes to khaki over green
+        rgba[..., 3] = (a_all * 150).astype(np.uint8)
         top = a_hit > 0.05                                              # fires next to a radar burn: solid yellow on top
         rgba[top, 0], rgba[top, 1], rgba[top, 2] = 255, 226, 60
         rgba[top, 3] = np.maximum(rgba[top, 3], (a_hit[top] * 255).astype(np.uint8))

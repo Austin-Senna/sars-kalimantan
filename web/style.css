@@ -94,8 +94,8 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 #chart { width: 100%; height: auto; margin-top: 6px; }
 #chart text { fill: var(--muted); font-size: 9px; }
 #chart .grid { stroke: var(--line); }
-#chart path.hv { stroke: var(--hv); fill: none; stroke-width: 2.5; }
-#chart path.hh { stroke: var(--hh); fill: none; stroke-width: 2.5; }
+#chart path.hv { stroke: var(--hv); fill: none; stroke-width: 3; }
+#chart path.hh { stroke: #7f95c4; fill: none; stroke-width: 1.5; }
 #chart circle.hv { fill: var(--hv); }
 #chart circle.hh { fill: var(--hh); }
 #chart .now { stroke: var(--loss); stroke-dasharray: 3 3; }
@@ -155,7 +155,7 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 .bars.two { grid-template-columns: 1fr 1fr; gap: 10px; }
 .bars.two .bar { margin-top: 0; }
 .key.fire { background: #ffe23c; }
-.key.firefaint { background: radial-gradient(circle, rgba(255,170,50,0.75), rgba(255,170,50,0.15)); }
+.key.firefaint { background: rgba(255, 110, 20, 0.7); }
 .leaflet-fires-pane.glow { filter: drop-shadow(0 0 1.5px #ffd23c) drop-shadow(0 0 3px rgba(255, 210, 60, 0.7)); }
 .fadetop { -webkit-mask-image: linear-gradient(to bottom, transparent 1%, #000 5%); mask-image: linear-gradient(to bottom, transparent 1%, #000 5%); }
 .headline { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
@@ -196,3 +196,4 @@ input[type="checkbox"]:disabled + * , label:has(input:disabled) { opacity: 0.45;
   .cityline { display: none; }        /* the chips on the map carry the same numbers */
   .city-Banjarmasin { transform: translate(-50%, 40%); }
 }
+.cv { white-space: nowrap; }
