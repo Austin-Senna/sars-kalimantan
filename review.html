@@ -42,7 +42,7 @@
 <body>
   <header>
     <h1>Burn hand-check</h1>
-    <p>A random sample of 24 radar burns (each 0.8 km² or more, drawn with a fixed seed; size and place stay hidden until you reveal). Left: June to July, right: October to early November, both cloud-masked
+    <p>A random sample of 24 radar burns (each 0.8 km² or more, drawn with a fixed seed; size and place stay hidden until you reveal). Left: June to July, right: October to early November, both
       cloud-free photos from NASA's Landsat and Sentinel-2 satellites. The red outline is what the radar flagged. Label what you see
       inside the outline, before revealing what the fire and optical checks said. Black is where no clear view exists.</p>
     <p>Labels save in this browser. "Copy results" puts a summary on the clipboard to paste into the team chat.</p>
@@ -78,6 +78,7 @@
           <div class="truth">Fire match: <b>${Math.round(it.fire * 100)}%</b> of the burn · Optical change map, new damage: <b>${Math.round(it.optical * 100)}%</b></div>
         </article>`).join("");
 
+      if (revealed) { document.body.classList.add("reveal"); document.getElementById("reveal").textContent = "Hide checks"; }
       function paint() {
         document.body.classList.toggle("locked", revealed);
         grid.querySelectorAll(".card").forEach((card) => {
@@ -85,7 +86,7 @@
         });
         const n = data.items.length, done = Object.keys(saved).length;
         const count = (k) => Object.values(saved).filter((v) => v === k).length;
-        document.getElementById("tally").textContent =
+        document.getElementById("tally").textContent = (revealed ? "Checks revealed, labels locked. " : "") +
           `${done} of ${n} labelled · burned ${count("burned")} · cleared ${count("cleared")} · no change ${count("none")} · can't tell ${count("unclear")}`;
       }
       grid.addEventListener("click", (e) => {

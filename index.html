@@ -27,13 +27,14 @@
     <section class="explore" id="explore" hidden>
       <div class="stats">
         <div><span class="big loss" data-live="km2">0</span><small>km² of tree cover lost (radar)</small></div>
-        <div><span class="big" data-live="co2">0</span><small>Mt CO₂ from peat (estimate)</small></div>
+        <div><span class="big" data-live="co2">0</span><small>Mt CO₂ from peat (upper estimate)</small></div>
       </div>
       <p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>lost (radar)</span><span><i class="key grey"></i>no tree cover</span></p>
       <div class="layers">
         <label><input type="checkbox" id="tPeat"> Peat <span class="hint"><i class="key peat"></i>peat <i class="key peatburn"></i>burned peat</span></label>
         <label><input type="checkbox" id="tFires"> NASA fire detections <span class="hint">36 days up to the slider date</span></label>
         <label><input type="checkbox" id="tSmoke"> Smoke <span class="hint">what normal satellites see</span></label>
+        <label><input type="checkbox" id="tCO"> Fire gas <span class="hint">carbon monoxide, NASA AIRS</span></label>
         <p class="hint" id="smokeHides" hidden>Smoke is on: the radar layers are hidden under it.</p>
       </div>
       <div class="jumps">
@@ -47,9 +48,9 @@
         <strong id="probeTitle">This spot</strong>
         <button id="probeClose" type="button" aria-label="Close">×</button>
       </div>
-      <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
       <p class="probenote" id="probeNote"></p>
       <p class="legend"><span class="hv"></span>leaf echo (HV) <span class="hh"></span>ground and trunk echo (HH)</p>
+      <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
     </section>
 
     <p class="limits">Radar values are relative brightness from NISAR browse images, not calibrated backscatter. Radar map: Borneo south of 4.2° N. Sources and method: see the README.</p>

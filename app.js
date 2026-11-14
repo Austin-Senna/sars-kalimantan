@@ -29,13 +29,14 @@
   const pad = (n) => String(n).padStart(2, "0");
 
   L.imageOverlay(meta.smoke ? "data/basemap_region.jpg" : "data/basemap.jpg", meta.smoke ? region : bounds, { opacity: 0.5, className: "feather" }).addTo(map);
-  L.imageOverlay("data/base_hv.png", bounds, { pane: "radar", className: "pixelated" }).addTo(map);
+  L.imageOverlay("data/base_hv.png", bounds, { pane: "radar", className: "pixelated fadetop" }).addTo(map);
   L.imageOverlay("data/peat.png", bounds, { pane: "peat" }).addTo(map);  // smoothed: the peat map's 9 km cells read as blocks otherwise
   // One overlay per step for each time layer, all preloaded; only the current step is visible.
   const perStep = (prefix, b, p, cls) => steps.map((s) => L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p, className: cls }).addTo(map));
-  const loss = perStep("loss", bounds, "loss");
-  const peatburn = perStep("peatburn", bounds, "peatburn");
+  const loss = perStep("loss", bounds, "loss", "pixelated");
+  const peatburn = perStep("peatburn", bounds, "peatburn", "pixelated");
   const smoke = meta.smoke ? perStep("smoke", region, "smoke", "feather") : [];
+  const coLayers = meta.co ? perStep("co", region, "smoke", "feather") : [];  // fire gas shares the smoke view
   // Every fire detection, drawn per step as an image (36 days up to that step; bright next to an appeared burn).
   const fireLayers = perStep("fires", bounds, "fires", "fires");
   const cities = L.layerGroup().addTo(map);
@@ -44,11 +45,17 @@
   const marker = L.circleMarker([0, 0], { radius: 10, color: "#fff", weight: 2.5, fill: false, pane: "probe", renderer: L.svg({ pane: "probe" }) });
 
   // Burns are a few pixels wide at island zoom: give the loss pane a glow when zoomed out.
-  const glow = () => map.getPane("loss").classList.toggle("glow", map.getZoom() < 8);
+  const glow = () => { const z = map.getZoom() < 8; map.getPane("loss").classList.toggle("glow", z); map.getPane("fires").classList.toggle("glow", z); };
   map.on("zoomend", glow);
 
   // --- State: which layers show, and the current 12-day step.
-  const view = { smoke: false, fires: false, peat: false };
+  const view = { smoke: false, fires: false, peat: false, gas: "aod" };  // gas: what the smoke view shows, haze or CO
+  // One reading per city per step, for whichever the smoke view shows.
+  const reading = (name, i) => view.gas === "co" ? meta.co.cities[name].ppbv[i] : meta.smoke.cities[name].aod[i];
+  const level = (v) => v == null ? "none" : view.gas === "co"
+    ? (v >= 200 ? "thick" : v >= 110 ? "hazy" : "clear")   // CO: June is about 80 ppbv
+    : (v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear");    // haze: matches the scale bar
+  const fmtReading = (v) => v == null ? "no reading" : view.gas === "co" ? `${v}` : v.toFixed(1);
   let current = 0;
   function render() {
     const show = (el, on, o = 1) => { el.style.opacity = on ? o : 0; };
@@ -60,15 +67,19 @@
     show(map.getPane("peatburn"), view.peat && !view.smoke);
     loss.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
     peatburn.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
-    smoke.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
+    smoke.forEach((o, j) => o.setOpacity(view.gas === "aod" && j === current ? 1 : 0));
+    coLayers.forEach((o, j) => o.setOpacity(view.gas === "co" && j === current ? 1 : 0));
     fireLayers.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
     view.smoke ? cities.addTo(map) : cities.remove();
-    for (const { name, c, m } of cityMarkers) {
-      const v = c.aod[current];
-      const level = v == null ? "none" : v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear";  // matches the scale bar
-      m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null, html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
+    for (const { name, m } of cityMarkers) {
+      const v = reading(name, current);
+      m.setIcon(L.divIcon({ className: `city ${level(v)}`, iconSize: null, html: `<b>${name}</b> ${fmtReading(v)}` }));
     }
-    $("tPeat").checked = view.peat; $("tFires").checked = view.fires; $("tSmoke").checked = view.smoke;
+    document.querySelectorAll("[data-gas]").forEach((b) => b.classList.toggle("on", b.dataset.gas === view.gas));
+    document.querySelectorAll(".gas-aod").forEach((el) => { el.hidden = view.gas !== "aod"; });
+    document.querySelectorAll(".gas-co").forEach((el) => { el.hidden = view.gas !== "co"; });
+    $("tPeat").checked = view.peat; $("tFires").checked = view.fires;
+    $("tSmoke").checked = view.smoke && view.gas === "aod"; $("tCO").checked = view.smoke && view.gas === "co";
     $("tPeat").disabled = $("tFires").disabled = view.smoke;  // hidden under the smoke anyway
     $("smokeHides").hidden = !view.smoke;
   }
@@ -91,8 +102,8 @@
       co2range: s.co2_mt ? `range ${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)} Mt, from the IPCC uncertainty in how much peat burns` : "",
       co2short: s.co2_mt ? `${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)}` : "",
       cars: s.cars_m >= 0.05 ? `like ${s.cars_m.toFixed(1)} million cars for a year` : "",
-      cities: cityMarkers.filter((x) => x.c.aod[i] != null).sort((a, b) => b.c.aod[i] - a.c.aod[i]).slice(0, 3)
-        .map((x) => `${x.name} <b>${x.c.aod[i].toFixed(1)}</b>`).join(" · ") || "no readings this step",
+      cities: cityMarkers.filter((x) => reading(x.name, i) != null).sort((a, b) => reading(b.name, i) - reading(a.name, i)).slice(0, 3)
+        .map((x) => `${x.name} <b>${fmtReading(reading(x.name, i))}</b>`).join(" · ") || "no readings this step",
     };
     document.querySelectorAll("[data-live]").forEach((el) => { el.innerHTML = live[el.dataset.live] ?? ""; });
     render();
@@ -250,10 +261,14 @@
     {
       title: "Smoke hid the fire season",
       body: "Aug to Oct 2026: haze from burning forest and peat covered Borneo and reached Singapore. This is what normal satellites saw.",
-      widget: `<p class="cityline" data-live="cities"></p>
-        <div class="aodbar"></div>
+      widget: (meta.co ? `<div class="seg"><button type="button" data-gas="aod">Haze</button><button type="button" data-gas="co">Fire gas (CO)</button></div>` : "") +
+        `<p class="cityline" data-live="cities"></p>
+        <div class="gas-co" hidden><div class="cobar"></div>
+          <div class="aodticks"><span style="left:0">80 normal</span><span style="left:40%">200</span><span style="right:0">350 ppbv</span></div>
+          <p class="hint">Carbon monoxide, a gas from burning (smouldering peat makes the most), in parts per billion, 5 km up (NASA AIRS). About 4× its June level by October, at every city.</p></div>
+        <div class="gas-aod"><div class="aodbar"></div>
         <div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div>
-        <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p>`,
+        <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p></div>`,
       enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(0, last - 1, 420); },
     },
     {
@@ -268,10 +283,11 @@
       body: "Yellow dots are NASA fire detections from the 36 days up to the slider date. Bright ones sit next to a radar burn.",
       widget: near == null ? "" : `
         <div class="headline"><span class="big">${Math.round(near / chance)}×</span><span>more fire than chance</span></div>
-        <div class="bars">
-          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss had a fire within 1 km</small>
-          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of unburned tree cover nearby (chance)</small>
-        </div>` +
+        <div class="bars two">
+          <div><div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss had a fire within 1 km</small></div>
+          <div><div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of unburned tree cover nearby</small></div>
+        </div>
+        <p class="keys"><span><i class="key fire"></i>fire next to a burn</span><span><i class="key firefaint"></i>other fire</span></p>` +
         (optical ? `<p class="second">Optical satellites agree: <b>${optPct}%</b> vs <b>${optChance}%</b> by chance.</p>` : ""),
       enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); current = 3; flyTo(PROOF_ZONE); later(() => animate(3, last, 900), 1300); },
     },
@@ -281,7 +297,7 @@
         "Ketapang's peat dome is West Kalimantan's biggest burn.",
       // Two honest ends: the floor counts only peat loss a second NASA source confirmed; the top counts all radar loss.
       widget: (optical && optical.confirmed_co2_mt
-        ? `<div class="big">${Math.round(optical.confirmed_co2_mt[0])}–${Math.round(lastStep.co2_mt)}</div><small>million tonnes of CO₂: ${Math.round(optical.confirmed_co2_mt[0])} from peat loss confirmed by fire or optical satellites, ${Math.round(lastStep.co2_mt)} counting all radar loss. Like ${(optical.confirmed_co2_mt[0] / 4.6).toFixed(1)}–${lastStep.cars_m.toFixed(1)} million cars for a year.</small>`
+        ? `<div class="big">${Math.floor(optical.confirmed_co2_mt[0])}–${Math.round(lastStep.co2_mt)}</div><small>million tonnes of CO₂: ${Math.floor(optical.confirmed_co2_mt[0])} from peat loss a second satellite confirmed, ${Math.round(lastStep.co2_mt)} from all radar loss on peat. Like ${Math.round(Math.floor(optical.confirmed_co2_mt[0]) / 4.6)}–${Math.round(lastStep.cars_m)} million cars for a year.</small>`
         : `<div class="big" data-live="co2"></div><small>million tonnes of CO₂ (estimate, <span data-live="co2short"></span>): <span data-live="cars"></span></small>`) + `
         <p class="keys"><span><i class="key peat"></i>peat</span><span><i class="key peatburn"></i>burned peat</span><span><i class="key red"></i>other burns</span></p>`,
       enter() { Object.assign(view, { smoke: false, fires: false, peat: true }); stop(); setStep(last); ketapangJump(); },
@@ -316,7 +332,7 @@
       $("chWidget").innerHTML = c.widget;
       c.enter();
     } else {
-      Object.assign(view, { smoke: false, fires: false, peat: false });  // explore starts from the plain radar view
+      Object.assign(view, { smoke: false, fires: false, peat: false, gas: "aod" });  // explore starts from the plain radar view
       stop();
       setStep(last);
       flyTo(bounds);
@@ -335,10 +351,24 @@
     go(fwd ? chapter + 1 : chapter - 1);
   });
 
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-gas]");
+    if (!b) return;
+    view.gas = b.dataset.gas;
+    setStep(current);
+  });
+
   // Explore controls.
   $("tPeat").addEventListener("change", (e) => { view.peat = e.target.checked; render(); });
   $("tFires").addEventListener("change", (e) => { view.fires = e.target.checked; render(); });
-  $("tSmoke").addEventListener("change", (e) => { view.smoke = e.target.checked; render(); if (view.smoke) { closeProbe(); flyTo(region); } });
+  const smokeToggle = (gas) => (e) => {
+    const was = view.smoke;
+    view.smoke = e.target.checked; if (view.smoke) view.gas = gas;
+    setStep(current);
+    if (view.smoke && !was) { closeProbe(); flyTo(region); }
+  };
+  $("tSmoke").addEventListener("change", smokeToggle("aod"));
+  $("tCO").addEventListener("change", smokeToggle("co"));
   document.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => { stop(); Object.assign(view, { peat: true, smoke: false }); setStep(last); ketapangJump(); }));
 
   map.fitBounds(region, panelPad());
