@@ -76,10 +76,11 @@
     firesDrawnFor = key;
     fires.clearLayers();
     if (key == null) return;
-    const end = steps[current].end;
+    // Only fires from this step and the two before it (36 days): the dots follow the fire front instead of piling up.
+    const end = steps[current].end, start = steps[Math.max(0, current - 2)].start;
     const radius = map.getZoom() >= 8 ? 2.2 : 1.3;  // bigger dots once zoomed in to a region
     for (const [lat, lon, d] of fireData.points) {
-      if (d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
+      if (d >= start && d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
     }
   }
 
@@ -196,8 +197,10 @@
   };
 
   // --- Chapters.
-  const near = fireData ? Math.round(fireData.loss_near * 100) : null;
-  const chance = fireData ? Math.round(fireData.forest_near * 100) : null;
+  const timed = fireData && fireData.timed;
+  const near = timed ? Math.round(timed.loss_matched * 100) : null;
+  const chance = timed ? Math.round(timed.chance_matched * 100) : null;
+  const burns = timed ? Math.round(timed.burns_matched * 100) : null;
   const lastStep = steps[last];
   const keys = `<p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>radar echo collapsed</span><span><i class="key grey"></i>no tree cover</span></p>`;
   const chapters = [
@@ -218,14 +221,16 @@
     },
     {
       title: "It lines up with fire",
-      body: "Yellow dots are NASA fire detections, from heat sensors on two other satellites. The radar loss sits near them far more often than chance would put it.",
+      body: "Yellow dots are NASA fire detections from the last 36 days, seen by heat sensors on two other satellites. " +
+        "A lost patch counts as matched when a fire lands within 1 km of it, in the weeks its canopy disappeared.",
       widget: near == null ? "" : `
         <div class="bars">
-          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss lies within 2 km of a fire detection</small>
-          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of all tree cover does (chance)</small>
-        </div>`,
-      // Zoomed into the southwest burns: at island zoom the dots cover everything and hide the point.
-      enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); setStep(last); flyTo(PROOF_ZONE); },
+          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss has a matching fire</small>
+          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of unburned tree cover nearby would, by chance</small>
+        </div>
+        <p class="hint">${Math.round(near / chance)}× chance. ${burns}% of the ${timed.burns} burns over 0.8 km² have a matching fire.</p>`,
+      // Zoomed into the southwest burns, playing from August: fires move through, red follows.
+      enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); current = 3; flyTo(PROOF_ZONE); later(() => animate(3, last, 900), 1300); },
     },
     {
       title: "The burns released peat carbon",
