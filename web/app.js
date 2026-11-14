@@ -1,148 +1,134 @@
-// Borneo through the smoke: static viewer for the precomputed NISAR HV loss layers in data/.
+// Borneo through the smoke: a four-chapter story over precomputed NISAR, FIRMS, VIIRS and peat layers in data/,
+// then a free Explore mode. Everything is static: no network calls beyond these files.
 (async function () {
-  const meta = await (await fetch("data/steps.json")).json();
+  const meta = await (await fetch("data/steps.json", { cache: "no-cache" })).json();
+  let fireData = null;
+  try { fireData = await (await fetch("data/firms.json", { cache: "no-cache" })).json(); } catch (e) { /* fires chapter shows no dots */ }
   const steps = meta.steps;
+  const last = steps.length - 1;
   const bounds = L.latLngBounds(meta.bounds);
-  const KETAPANG = meta.ketapang || [-2.2, 110.3];
-
-  // Canvas rendering: tens of thousands of fire dots stay smooth while scrubbing.
-  // No maxBounds on phones: the view there spans more latitude than the island, and the clamp would undo the fit above the sheet.
   const region = meta.smoke ? L.latLngBounds(meta.smoke.bounds) : bounds;  // Borneo plus Singapore and Kuala Lumpur
-  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: window.innerWidth > 700 ? region.pad(0.3) : null, preferCanvas: true, zoomControl: false });
-  L.control.zoom({ position: "topright" }).addTo(map);  // top left sits under the panel
+  const FIRE_ZONE = L.latLngBounds([[-4.2, 108.9], [1.4, 117.8]]);          // where the burns cluster
+  const PROOF_ZONE = L.latLngBounds([[-3.1, 109.7], [-1.3, 111.3]]);       // Ketapang's burns, close enough to see dots
+  const KETAPANG = meta.ketapang || [-2.2, 110.48];
+  const $ = (id) => document.getElementById(id);
   const narrow = () => window.innerWidth <= 700;
-  const fit = () => map.fitBounds(bounds, narrow()
-    ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight], paddingTopLeft: [0, 8] }
-    : { paddingTopLeft: [400, 0] });
-  fit();
+
+  // --- Map and panes, bottom to top: basemap, radar base, peat, fires, loss, burned peat, smoke, probe marker.
+  const map = L.map("map", { zoomSnap: 0.25, zoomControl: false, preferCanvas: true,
+    maxBounds: narrow() ? null : region.pad(0.4) });
+  L.control.zoom({ position: "topright" }).addTo(map);
   map.attributionControl.setPrefix(false);
-  map.attributionControl.addAttribution(
-    "Radar: NISAR GCOV (NASA/ISRO, ASF DAAC) · Basemap: NASA Blue Marble (GIBS) · Fires: NASA FIRMS · Smoke: NASA VIIRS Deep Blue AOD (GIBS) · Peat: Peat-ML");
+  map.attributionControl.addAttribution("Radar: NISAR GCOV (NASA/ISRO, ASF DAAC) · Fires: NASA FIRMS · " +
+    "Smoke: NASA VIIRS Deep Blue AOD · Basemap: NASA Blue Marble (GIBS) · Peat: Peat-ML");
+  const pane = (name, z) => { const p = map.createPane(name); p.style.zIndex = z; return p; };
+  pane("radar", 402); pane("peat", 405); pane("fires", 410); pane("loss", 420); pane("peatburn", 425);
+  pane("smoke", 430); pane("probe", 600);
+  const pad = (n) => String(n).padStart(2, "0");
 
-  if (meta.smoke) L.imageOverlay("data/basemap_region.jpg", region, { opacity: 0.55 }).addTo(map);  // Sumatra to Sulawesi
-  else L.imageOverlay("data/basemap.jpg", bounds, { opacity: 0.55 }).addTo(map);
-  const radarBase = L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.9, className: "pixelated" }).addTo(map);
-  const peat = L.imageOverlay("data/peat.png", bounds, { className: "pixelated" });
-
-  map.createPane("loss").style.zIndex = 420;  // above the fire dots (410), which sit above the radar base (400)
-  // One overlay per step, all preloaded, only the current one visible: scrubbing never waits on the network.
-  // Burned peat, per step: the loss on peat drawn as dark char above the red, shown with the peat toggle.
-  map.createPane("peatburn").style.zIndex = 425;
-  const peatburn = steps.map((s) => L.imageOverlay(`data/peatburn_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0, pane: "peatburn" }).addTo(map));
-  const loss = steps.map((s) => L.imageOverlay(`data/loss_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0, pane: "loss" }).addTo(map));
-
-  // Fires draw in their own pane between the radar base and the loss layers, so the red stays on top.
-  const firePane = map.createPane("fires");
-  firePane.style.zIndex = 410;
-  firePane.style.opacity = 0.45;  // dense at island zoom: dim enough that the red loss reads on top
+  L.imageOverlay(meta.smoke ? "data/basemap_region.jpg" : "data/basemap.jpg", meta.smoke ? region : bounds, { opacity: 0.5 }).addTo(map);
+  L.imageOverlay("data/base_hv.png", bounds, { pane: "radar", className: "pixelated" }).addTo(map);
+  L.imageOverlay("data/peat.png", bounds, { pane: "peat", className: "pixelated" }).addTo(map);
+  // One overlay per step for each time layer, all preloaded; only the current step is visible.
+  const perStep = (prefix, b, p) => steps.map((s) => L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p }).addTo(map));
+  const loss = perStep("loss", bounds, "loss");
+  const peatburn = perStep("peatburn", bounds, "peatburn");
+  const smoke = meta.smoke ? perStep("smoke", region, "smoke") : [];
   const fireRenderer = L.canvas({ pane: "fires" });
-  const fires = L.layerGroup();
-
-  // Smoke: VIIRS aerosol optical depth per step over the wider region, above everything, with city readings.
-  map.createPane("smoke").style.zIndex = 430;
-  const smoke = meta.smoke ? steps.map((s) => L.imageOverlay(`data/smoke_${String(s.step).padStart(2, "0")}.png`, region, { opacity: 0, pane: "smoke" }).addTo(map)) : [];
-  const cityLayer = L.layerGroup();
+  const fires = L.layerGroup().addTo(map);
+  const cities = L.layerGroup().addTo(map);
   const cityMarkers = meta.smoke ? Object.entries(meta.smoke.cities).map(([name, c]) =>
-    [c, L.marker(c.latlon, { interactive: false, icon: L.divIcon({ className: "city", html: "", iconSize: null }) }).addTo(cityLayer), name]) : [];
-  function drawSmoke() {
-    const on = document.getElementById("tSmoke").checked;
-    smoke.forEach((o, j) => o.setOpacity(on && j === current ? 1 : 0));
-    // Smoke on is the view a normal satellite has: the radar layers step aside until it is turned off.
-    radarBase.setOpacity(on ? 0 : 0.9);
-    map.getPane("loss").style.opacity = on ? 0 : 1;
-    map.getPane("peatburn").style.opacity = on ? 0 : 1;
-    map.getPane("fires").style.opacity = on ? 0 : 0.45;
-    for (const [c, m, name] of cityMarkers) {
+    ({ name, c, m: L.marker(c.latlon, { interactive: false, icon: L.divIcon({ className: "city", iconSize: null }) }).addTo(cities) })) : [];
+  const marker = L.circleMarker([0, 0], { radius: 10, color: "#fff", weight: 2.5, fill: false, pane: "probe", renderer: L.svg({ pane: "probe" }) });
+
+  // Burns are a few pixels wide at island zoom: give the loss pane a glow when zoomed out.
+  const glow = () => map.getPane("loss").classList.toggle("glow", map.getZoom() < 8);
+  map.on("zoomend", () => { glow(); firesDrawnFor = null; drawFires(); });
+
+  // --- State: which layers show, and the current 12-day step.
+  const view = { smoke: false, fires: false, peat: false };
+  let firesDrawnFor = null;
+  let current = 0;
+  function render() {
+    const show = (el, on, o = 1) => { el.style.opacity = on ? o : 0; };
+    show(map.getPane("smoke"), view.smoke);
+    show(map.getPane("radar"), !view.smoke, 0.92);
+    show(map.getPane("loss"), !view.smoke);
+    show(map.getPane("fires"), view.fires && !view.smoke, 0.38);
+    show(map.getPane("peat"), view.peat && !view.smoke);
+    show(map.getPane("peatburn"), view.peat && !view.smoke);
+    loss.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
+    peatburn.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
+    smoke.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
+    view.smoke ? cities.addTo(map) : cities.remove();
+    for (const { name, c, m } of cityMarkers) {
       const v = c.aod[current];
       const level = v == null ? "none" : v >= 1 ? "thick" : v >= 0.3 ? "hazy" : "clear";
-      m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null,
-        html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
+      m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null, html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
     }
-  }
-  let fireData = null;
-  try {
-    fireData = await (await fetch("data/firms.json")).json();
-  } catch (e) {
-    document.getElementById("tFires").disabled = true;
-  }
-
-  const slider = document.getElementById("slider");
-  slider.max = steps.length - 1;
-  const fmtDate = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-  const fmtNum = (n) => Math.round(n).toLocaleString("en-US");
-  let current = 0;
-
-  function show(i) {
-    current = i;
-    loss.forEach((o, j) => o.setOpacity(j === i ? 1 : 0));
-    const peatOn = document.getElementById("tPeat").checked;
-    peatburn.forEach((o, j) => o.setOpacity(peatOn && j === i ? 1 : 0));
-    const s = steps[i];
-    document.getElementById("date").textContent = `${fmtDate(s.start)} to ${fmtDate(s.end)}`;
-    document.getElementById("km2").textContent = fmtNum(s.km2);
-    if (s.co2_mt != null) {
-      document.getElementById("co2wrap").hidden = false;
-      document.getElementById("co2").textContent = s.co2_mt.toFixed(s.co2_mt < 10 ? 1 : 0);
-      const r = (v) => v.toFixed(v < 10 ? 1 : 0);
-      document.getElementById("co2label").textContent = s.co2_mt ? `Mt CO₂ from burning peat (IPCC range ${r(s.co2_lo)} to ${r(s.co2_hi)})` : "Mt CO₂ from burning peat";
-      document.getElementById("co2wrap").title = meta.co2_note || "";
-      document.getElementById("cars").textContent = s.cars_m >= 0.05
-        ? `About as much as ${s.cars_m.toFixed(1)} million cars give off in a year` : "";
-    }
-    slider.value = i;
     drawFires();
-    drawSmoke();
-    drawChart();
+    $("tPeat").checked = view.peat; $("tFires").checked = view.fires; $("tSmoke").checked = view.smoke;
   }
 
   function drawFires() {
+    const key = view.fires && fireData ? current : null;
+    if (key === firesDrawnFor) return;
+    firesDrawnFor = key;
     fires.clearLayers();
-    if (!fireData || !document.getElementById("tFires").checked) return;
+    if (key == null) return;
     const end = steps[current].end;
+    const radius = map.getZoom() >= 8 ? 2.2 : 1.3;  // bigger dots once zoomed in to a region
     for (const [lat, lon, d] of fireData.points) {
-      if (d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius: 1.2, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
-    }
-    const a = document.getElementById("agree");
-    if (fireData.agreement) {
-      a.hidden = false;
-      a.textContent = fireData.agreement;
+      if (d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
     }
   }
 
-  // Play through the steps.
+  // --- Time.
+  const slider = $("slider");
+  slider.max = last;
+  const fmtDate = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+  const fmtNum = (n) => Math.round(n).toLocaleString("en-US");
+  const fmtMt = (v) => v.toFixed(v < 10 ? 1 : 0);
+  function setStep(i) {
+    current = i;
+    const s = steps[i];
+    slider.value = i;
+    $("date").textContent = `${fmtDate(s.start)} to ${fmtDate(s.end)}`;
+    const live = {
+      km2: fmtNum(s.km2),
+      co2: s.co2_mt != null ? fmtMt(s.co2_mt) : "–",
+      co2range: s.co2_mt ? `IPCC range ${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)} Mt` : "",
+      cars: s.cars_m >= 0.05 ? `about what ${s.cars_m.toFixed(1)} million cars give off in a year` : "",
+      cities: cityMarkers.filter((x) => x.c.aod[i] != null).sort((a, b) => b.c.aod[i] - a.c.aod[i]).slice(0, 3)
+        .map((x) => `${x.name} <b>${x.c.aod[i].toFixed(1)}</b>`).join(" · ") || "no readings this step",
+    };
+    document.querySelectorAll("[data-live]").forEach((el) => { el.innerHTML = live[el.dataset.live] ?? ""; });
+    render();
+    drawChart();
+  }
   let timer = null;
-  const play = document.getElementById("play");
-  play.addEventListener("click", () => {
-    if (timer) { clearInterval(timer); timer = null; play.textContent = "▶"; play.setAttribute("aria-label", "Play"); return; }
-    if (current === steps.length - 1) show(0);
+  const play = $("play");
+  function stop() { clearInterval(timer); timer = null; play.textContent = "▶"; play.setAttribute("aria-label", "Play"); }
+  function animate(from, to, ms) {
+    stop();
+    setStep(from);
+    if (from === to) return;
     play.textContent = "❚❚"; play.setAttribute("aria-label", "Pause");
-    timer = setInterval(() => {
-      if (current >= steps.length - 1) { play.click(); return; }
-      show(current + 1);
-    }, 900);
-  });
-  slider.addEventListener("input", () => show(+slider.value));
-  document.getElementById("tPeat").addEventListener("change", (e) => { e.target.checked ? peat.addTo(map) : peat.remove(); show(current); });
-  document.getElementById("tSmoke").addEventListener("change", (e) => {
-    document.getElementById("smokeNote").hidden = !e.target.checked;
-    if (e.target.checked) {
-      cityLayer.addTo(map);
-      map.flyToBounds(region, { duration: 1, ...(narrow()
-        ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight] }
-        : { paddingTopLeft: [400, 0] }) });
-    } else {
-      cityLayer.remove();
-      map.flyToBounds(bounds, { duration: 1, ...(narrow()
-        ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight] }
-        : { paddingTopLeft: [400, 0] }) });
-    }
-    drawSmoke();
-  });
-  document.getElementById("tFires").addEventListener("change", (e) => { e.target.checked ? fires.addTo(map) : fires.remove(); drawFires(); });
+    timer = setInterval(() => { if (current >= to) { stop(); return; } setStep(current + 1); }, ms);
+  }
+  play.addEventListener("click", () => (timer ? stop() : animate(current === last ? 0 : current, last, 800)));
+  slider.addEventListener("input", () => { stop(); setStep(+slider.value); });
 
-  // Click probe: per-step HV and HH brightness from the probe PNGs.
+  // --- Camera.
+  const panelPad = () => (narrow()
+    ? { paddingTopLeft: [0, 8], paddingBottomRight: [0, $("panel").offsetHeight] }
+    : { paddingTopLeft: [$("panel").offsetWidth + 32, 16], paddingBottomRight: [16, 16] });
+  const flyTo = (b, opts = {}) => map.flyToBounds(b, { duration: 1.2, ...panelPad(), ...opts });
+
+  // --- Probe chart.
+  let probeAt = null;
   const probe = { hv: [], hh: [], w: 0, h: 0, ready: false };
-  async function loadProbe() {
+  (async () => {
     const load = (src) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src; });
     const read = (im) => {
       const c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
@@ -151,18 +137,12 @@
     };
     try {
       for (const s of steps) {
-        const n = String(s.step).padStart(2, "0");
-        const [hv, hh] = await Promise.all([load(`data/probe_hv_${n}.png`), load(`data/probe_hh_${n}.png`)]);
+        const [hv, hh] = await Promise.all([load(`data/probe_hv_${pad(s.step)}.png`), load(`data/probe_hh_${pad(s.step)}.png`)]);
         probe.hv.push(read(hv)); probe.hh.push(read(hh)); probe.w = hv.width; probe.h = hv.height;
       }
       probe.ready = true;
-    } catch (e) { /* no probe layers yet: clicks do nothing */ }
-  }
-  loadProbe();
-
-  let probeAt = null;
-  map.createPane("probe").style.zIndex = 600;  // the click marker sits above every layer
-  const marker = L.circleMarker([0, 0], { radius: 9, color: "#fff", weight: 2.5, fill: false, pane: "probe", renderer: L.svg({ pane: "probe" }) });
+    } catch (e) { /* no probe layers: clicks do nothing */ }
+  })();
   function sampleAt(latlng) {
     const x = Math.floor((latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest()) * probe.w);
     const y = Math.floor((bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth()) * probe.h);
@@ -177,51 +157,137 @@
     if (!s || !s.hv.length) return;
     probeAt = s;
     marker.setLatLng(latlng).addTo(map);
-    document.getElementById("probeTitle").textContent = title || `${latlng.lat.toFixed(2)}°, ${latlng.lng.toFixed(2)}°`;
-    document.getElementById("probe").hidden = false;
+    $("probeTitle").textContent = title || `${latlng.lat.toFixed(2)}°, ${latlng.lng.toFixed(2)}°`;
+    $("probe").hidden = false;
     drawChart();
   }
+  function closeProbe() { $("probe").hidden = true; marker.remove(); probeAt = null; }
   map.on("click", (e) => openProbe(e.latlng));
-  document.getElementById("probeClose").addEventListener("click", () => { document.getElementById("probe").hidden = true; marker.remove(); probeAt = null; });
-  document.getElementById("jump").addEventListener("click", () => {
-    map.flyTo(KETAPANG, 10, { duration: 1.2 });
-    // The Ketapang chart is the burn itself: its burned pixels only, from one radar pass, at each real look date.
-    map.once("moveend", () => openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series));
-  });
-  if (meta.ketapang_km2) {
-    document.getElementById("jumpNote").textContent =
-      `Biggest burn in West Kalimantan: ${Math.round(meta.ketapang_km2)} km², #${meta.ketapang_rank} on the island.`;
-  }
-
+  $("probeClose").addEventListener("click", closeProbe);
   function drawChart() {
     if (!probeAt) return;
-    const svg = document.getElementById("chart");
+    const svg = $("chart");
     const W = 300, H = 130, l = 26, r = 6, t = 8, b = 22;
-    const t0 = Date.parse(steps[0].start), t1 = Date.parse(steps[steps.length - 1].end);
+    const t0 = Date.parse(steps[0].start), t1 = Date.parse(steps[last].end);
     const xs = (d) => l + ((Date.parse(d) - t0) / (t1 - t0)) * (W - l - r);
-    // Zoom the y axis to the data so a real drop is visible; the axis is relative brightness, not zero-based.
+    // The y axis zooms to the data so a real drop is visible; it is relative brightness, not zero-based.
     const vals = [...probeAt.hv, ...probeAt.hh].map((p) => p[1]);
-    const pad = Math.max(8, (Math.max(...vals) - Math.min(...vals)) * 0.15);
-    const lo = Math.max(0, Math.min(...vals) - pad), hi = Math.min(255, Math.max(...vals) + pad);
+    const padY = Math.max(8, (Math.max(...vals) - Math.min(...vals)) * 0.15);
+    const lo = Math.max(0, Math.min(...vals) - padY), hi = Math.min(255, Math.max(...vals) + padY);
     const ys = (v) => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
     const path = (pts) => pts.map(([d, v], i) => (i ? "L" : "M") + `${xs(d)},${ys(v)}`).join("");
     const dots = (pts, cls) => pts.map(([d, v]) => `<circle class="${cls}" cx="${xs(d)}" cy="${ys(v)}" r="2"/>`).join("");
     const months = steps.map((s) => s.start.slice(0, 7)).filter((m, i, a) => a.indexOf(m) === i);
-    const now = steps[current].end;
     svg.innerHTML =
       [hi, (hi + lo) / 2, lo].map((v) => `<line class="grid" x1="${l}" x2="${W - r}" y1="${ys(v)}" y2="${ys(v)}"/>`).join("") +
       `<text x="2" y="${ys(hi) + 3}">brighter</text><text x="2" y="${ys(lo)}">darker</text>` +
-      months.map((m) => `<text x="${xs(m + "-01") < l ? l : xs(m + "-01")}" y="${H - 6}">${new Date(m + "-15T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
-      `<line class="now" x1="${xs(now)}" x2="${xs(now)}" y1="${t}" y2="${H - b}"/>` +
-      `<path class="hh" d="${path(probeAt.hh)}"/><path class="hv" d="${path(probeAt.hv)}"/>` +
-      dots(probeAt.hh, "hh") + dots(probeAt.hv, "hv");
-    const first = probeAt.hv[0][1], last = probeAt.hv[probeAt.hv.length - 1][1];
-    const pct = Math.round((last - first) / first * 100);
-    document.getElementById("probeNote").textContent = pct <= -5
+      months.slice(1).map((m) => `<text x="${xs(m + "-01")}" y="${H - 6}" text-anchor="middle">${new Date(m + "-15T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
+      `<line class="now" x1="${xs(steps[current].end)}" x2="${xs(steps[current].end)}" y1="${t}" y2="${H - b}"/>` +
+      `<path class="hh" d="${path(probeAt.hh)}"/><path class="hv" d="${path(probeAt.hv)}"/>` + dots(probeAt.hh, "hh") + dots(probeAt.hv, "hv");
+    const first = probeAt.hv[0][1], end = probeAt.hv[probeAt.hv.length - 1][1];
+    const pct = Math.round((end - first) / first * 100);
+    $("probeNote").textContent = pct <= -5
       ? `Leaf echo (HV) is ${-pct}% below June by the last look.`
       : `Leaf echo (HV) changed ${pct >= 0 ? "+" : ""}${pct}% since June: no clear canopy loss here.`;
   }
+  const ketapangJump = () => {
+    map.flyTo(KETAPANG, narrow() ? 9.5 : 10, { duration: 1.4 });
+    map.once("moveend", () => openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series));
+  };
 
-  window.addEventListener("resize", () => {});
-  show(0);
+  // --- Chapters.
+  const near = fireData ? Math.round(fireData.loss_near * 100) : null;
+  const chance = fireData ? Math.round(fireData.forest_near * 100) : null;
+  const lastStep = steps[last];
+  const keys = `<p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>radar echo collapsed</span><span><i class="key grey"></i>no tree cover</span></p>`;
+  const chapters = [
+    {
+      title: "Smoke hid Borneo's fire season",
+      body: "From August to October 2026, haze from burning forest and peat covered Borneo and drifted to Singapore and Kuala Lumpur. This is what ordinary satellites see.",
+      widget: `<p class="cityline" data-live="cities"></p>
+        <div class="aodbar"></div>
+        <div class="aodticks"><span style="left:0">0.3 clear</span><span style="left:26%">1 hazy</span><span style="left:63%">2</span><span style="right:0">3+ thick</span></div>
+        <p class="hint"><i class="key nodata"></i>No reading: cloud, or smoke too thick to measure. Numbers are aerosol optical depth, how much sunlight the haze blocks (NASA VIIRS).</p>`,
+      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(region); animate(0, 8, 450); },
+    },
+    {
+      title: "Radar sees through it",
+      body: "NISAR's L-band radar passes through smoke and cloud. Its HV channel echoes off leaves and branches, so when canopy burns, the echo collapses. Red is where it did, 12 days at a time.",
+      widget: `<div class="big loss" data-live="km2"></div><small>km² of tree cover lost since June</small>${keys}`,
+      enter() { Object.assign(view, { smoke: false, fires: false, peat: false }); stop(); current = 0; flyTo(FIRE_ZONE); later(() => animate(0, last, 650), 1200); },
+    },
+    {
+      title: "It lines up with fire",
+      body: "Yellow dots are NASA fire detections, from heat sensors on two other satellites. The radar loss sits near them far more often than chance would put it.",
+      widget: near == null ? "" : `
+        <div class="bars">
+          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss lies within 2 km of a fire detection</small>
+          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of all tree cover does (chance)</small>
+        </div>`,
+      // Zoomed into the southwest burns: at island zoom the dots cover everything and hide the point.
+      enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); setStep(last); flyTo(PROOF_ZONE); },
+    },
+    {
+      title: "The burns released peat carbon",
+      body: "Much of it burned on peat, soil built from centuries of dead plants. Dark marks burns on peat. Ketapang's peat dome is the biggest burn in West Kalimantan" +
+        (meta.ketapang_km2 ? ` (${Math.round(meta.ketapang_km2)} km²)` : "") + ": its leaf echo fell steadily from August.",
+      widget: `<div class="big" data-live="co2"></div><small>Mt CO₂ from burning peat, <span data-live="cars"></span></small>
+        <p class="hint" data-live="co2range"></p>`,
+      enter() { Object.assign(view, { smoke: false, fires: false, peat: true }); stop(); setStep(last); ketapangJump(); },
+    },
+  ];
+  const EXPLORE = chapters.length;
+  let pending = null;  // a delayed start that must not fire after the chapter changes
+  function later(fn, ms) { pending = setTimeout(() => { pending = null; fn(); }, ms); }
+  let chapter = -1;
+  const dots = $("dots");
+  dots.innerHTML = [...chapters.map((c, i) => `<button type="button" data-ch="${i}" aria-label="Chapter ${i + 1}: ${c.title}">${i + 1}</button>`),
+    `<button type="button" data-ch="${EXPLORE}" class="explore-dot">Explore</button>`].join("");
+  dots.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) go(+b.dataset.ch); });
+
+  function go(n) {
+    n = Math.max(0, Math.min(EXPLORE, n));
+    if (n === chapter) return;
+    chapter = n;
+    clearTimeout(pending);
+    closeProbe();
+    dots.querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.ch === n));
+    const story = n < EXPLORE;
+    $("chapter").hidden = !story;
+    $("explore").hidden = story;
+    $("prev").disabled = n === 0;
+    $("next").textContent = n === EXPLORE - 1 ? "Explore the map →" : n === EXPLORE ? "Back to the start" : "Next →";
+    if (story) {
+      const c = chapters[n];
+      $("chNo").textContent = `${n + 1} of ${chapters.length}`;
+      $("chTitle").textContent = c.title;
+      $("chBody").textContent = c.body;
+      $("chWidget").innerHTML = c.widget;
+      c.enter();
+    } else {
+      Object.assign(view, { smoke: false, fires: false, peat: false });  // explore starts from the plain radar view
+      stop();
+      setStep(last);
+      flyTo(bounds);
+    }
+    setStep(current);
+    $("panel").scrollTop = 0;
+  }
+  $("prev").addEventListener("click", () => go(chapter - 1));
+  $("next").addEventListener("click", () => go(chapter === EXPLORE ? 0 : chapter + 1));
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea")) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown") go(chapter === EXPLORE ? EXPLORE : chapter + 1);
+    if (e.key === "ArrowLeft" || e.key === "PageUp") go(chapter - 1);
+  });
+
+  // Explore controls.
+  $("tPeat").addEventListener("change", (e) => { view.peat = e.target.checked; render(); });
+  $("tFires").addEventListener("change", (e) => { view.fires = e.target.checked; render(); });
+  $("tSmoke").addEventListener("change", (e) => { view.smoke = e.target.checked; render(); flyTo(view.smoke ? region : bounds); });
+  document.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => { stop(); setStep(last); ketapangJump(); }));
+
+  map.fitBounds(region, panelPad());
+  glow();
+  go(0);
 })();

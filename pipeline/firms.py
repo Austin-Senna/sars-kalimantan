@@ -104,7 +104,7 @@ def thin(points: list[list], cell: float = 0.02) -> list[list]:
     for lat, lon, d in points:
         k = (round(lat / cell), round(lon / cell))
         if k not in first or d < first[k][2]:
-            first[k] = [round(k[0] * cell, 2), round(k[1] * cell, 2), d]
+            first[k] = [lat, lon, d]  # the detection's own position, so the dots do not line up on a grid
     return sorted(first.values(), key=lambda p: p[2])
 
 

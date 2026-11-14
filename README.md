@@ -13,7 +13,7 @@ The app is static. From the repo root:
 python3 -m http.server 8000 --directory web
 ```
 
-Then open http://localhost:8000. No network needed: the map layers, the basemap and Leaflet are all in `web/`.
+Then open http://localhost:8000. The app is a four-chapter story (Next, or the arrow keys): the smoke, the radar loss under it, the check against NASA fire detections, and the peat carbon. Then Explore opens the free map. No network needed: the map layers, the basemap and Leaflet are all in `web/`.
 
 ## Rebuild the layers
 

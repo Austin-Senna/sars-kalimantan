@@ -188,11 +188,17 @@ def write() -> None:
     # land already cleared) in dark grey. Red loss then reads against green.
     forest = cached["forest"] & land
     lum = np.nan_to_num(base / 255, nan=0).clip(0, 1)
+    # Stretch brightness inside each class so the canopy keeps its texture instead of a flat fill.
+    lo, hi = np.percentile(lum[forest], [2, 98]) if forest.any() else (0, 1)
+    tex = ((lum - lo) / max(hi - lo, 1e-3)).clip(0, 1)
     rgb = np.zeros((*base.shape, 3), np.float32)
-    rgb[forest] = np.outer(0.55 + 0.6 * lum[forest], (46, 112, 72))
+    rgb[forest] = np.outer(0.45 + 0.75 * tex[forest], (36, 86, 58))
     other = ~forest
-    rgb[other] = np.outer(0.35 + 0.6 * lum[other], (88, 92, 90))
-    alpha = np.where(land & np.isfinite(base), 255, 0).astype(np.uint8)
+    rgb[other] = np.outer(0.35 + 0.5 * lum[other], (78, 80, 79))
+    alpha = np.where(land & np.isfinite(base), 255, 0).astype(np.float32)
+    fade = round(0.4 / RES)  # the grid stops at 4.4 N inside Sabah: fade the top 0.4 degrees instead of a hard edge
+    alpha[:fade] *= np.linspace(0, 1, fade)[:, None]
+    alpha = alpha.astype(np.uint8)
     Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha])).save(WEB / "base_hv.png", optimize=True)
     rgba = np.zeros((*forest.shape, 4), np.uint8)
     rgba[forest] = (126, 224, 190, 38)
@@ -213,7 +219,13 @@ def write() -> None:
         steps.append({"step": s, "start": start.isoformat(),
                       "end": (start + timedelta(days=STEP_DAYS - 1)).isoformat(),
                       "km2": round(float(km2_px[lost].sum()), 1)})
-    (WEB / "steps.json").write_text(json.dumps({"bounds": [[SOUTH, WEST], [NORTH, EAST]], "steps": steps}, indent=1))
+    # Keep what the later scripts added (CO2, Ketapang, smoke): update only the bounds and each step's own fields.
+    meta_path = WEB / "steps.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    old_steps = {st["step"]: st for st in meta.get("steps", [])}
+    meta["bounds"] = [[SOUTH, WEST], [NORTH, EAST]]
+    meta["steps"] = [{**old_steps.get(st["step"], {}), **st} for st in steps]
+    meta_path.write_text(json.dumps(meta, indent=1))
     for s in steps:
         print(s)
 
