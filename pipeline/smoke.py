@@ -121,6 +121,13 @@ def main() -> None:
         rgba = np.zeros((H, W, 4), np.uint8)
         rgba[..., :3] = (light + (dark - light) * t[..., None] ** 0.8).astype(np.uint8)
         rgba[..., 3] = np.where(np.isfinite(mean), (np.clip((mean - 0.3) / 1.2, 0, 1) ** 0.8 * 225), 0).astype(np.uint8)
+        # No reading even after the fill: grey veil with diagonal stripes, never drawn as clear air.
+        # Deep Blue skips cloud and also smoke too thick to retrieve, so these holes are often the worst smoke.
+        yy, xx = np.mgrid[0:H, 0:W]
+        stripe = ((xx + yy) % 8) < 2
+        hole = ~np.isfinite(mean)
+        rgba[hole & stripe] = (190, 180, 168, 200)
+        rgba[hole & ~stripe] = (140, 132, 122, 120)
         Image.fromarray(rgba).save(mosaic.WEB / f"smoke_{s:02d}.png", optimize=True)
         for name, (lat, lon) in CITIES.items():
             r, c = int((NORTH - lat) / 0.025), int((lon - WEST) / 0.025)
