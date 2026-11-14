@@ -107,3 +107,4 @@ pipeline/data/work/
 .playwright-mcp/
 pipeline/data/inventory.json
 SUBMISSION.md
+demo/
