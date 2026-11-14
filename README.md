@@ -77,6 +77,11 @@ uv run python review.py      # hand-check sample with before/after HLS images ->
 - Basemap: NASA Blue Marble via GIBS: https://gibs.earthdata.nasa.gov/
 - Leaflet 1.9.4 (BSD-2-Clause): https://leafletjs.com/
 
+## How this was made
+
+- The code (pipeline and web app) was written with Claude Code (Anthropic), an AI coding assistant, directed and reviewed by the team. No AI-generated images, video or audio are in the app.
+- The 30-second demo video is a scripted screen recording of this app, made with a Playwright recorder (MIT licensed, from the dotclaude toolkit) with captions burned in. It shows the real app and real data; nothing in it is staged.
+
 ## Licence
 
 Apache-2.0. See `LICENSE`.
