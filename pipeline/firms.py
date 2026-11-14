@@ -21,7 +21,10 @@ API = "https://firms.modaps.eosdis.nasa.gov/api"
 SOURCES = ("VIIRS_SNPP", "VIIRS_NOAA20")
 START, END = date(2026, 6, 17), date(2026, 10, 26)
 DAYS_PER_CALL = 5
-NEAR_KM = 2.0
+NEAR_KM = 2.0      # the first, loose test: any detection all season within 2 km
+MATCH_KM = 1.0     # timed test: about three VIIRS pixels (375 m)
+LAG_STEPS = 2      # timed test: a fire counts from two 12-day steps before the loss first shows, to that step
+CELL_DEG = 0.5     # timed test: chance is measured on unburned tree cover in the same 0.5 degree cell
 CACHE = mosaic.ROOT / "data" / "work" / "firms_raw.json"
 
 
@@ -98,11 +101,88 @@ def agreement(points: list[list]) -> tuple[float, float]:
     return float(near[lost].mean()), float(near[forest].mean())
 
 
-def thin(points: list[list], cell: float = 0.02) -> list[list]:
-    """For the map: keep the first detection in each cell (about 2 km), so the browser draws tens of thousands of dots, not 600k."""
-    first: dict[tuple[int, int], list] = {}
+def timed_agreement(points: list[list]) -> dict:
+    """Does a fire land where and when the canopy went? Compared with chance in the same place and season.
+
+    For each lost pixel (the final loss map), its onset is the first 12-day step it crossed the loss threshold.
+    It counts as matched when a detection lies within MATCH_KM during that step or the LAG_STEPS before it
+    (the radar needs two looks, so the burn itself can sit a step or two earlier).
+    Chance: unburned tree cover in the same CELL_DEG cells, each given an onset drawn from that cell's real
+    burns, run through the identical test. Also reports the share of burns (8-connected clusters of at least
+    10 pixels, about 0.8 km2) with at least one matched pixel.
+    """
+    from scipy.ndimage import label
+    cached = np.load(mosaic.WORK / "mosaic.npz")
+    score = cached["score"]
+    n_steps, shape = score.shape[0], score.shape[1:]
+    land = mosaic.borneo_mask(shape)
+    forest = cached["forest"] & land
+    onset = np.full(shape, -1, np.int8)
+    for s in range(n_steps):
+        over = np.nan_to_num(score[s].astype(np.float32), nan=-99) > mosaic.LOSS_MIN
+        onset[(onset < 0) & over] = s
+    final = np.nan_to_num(score[-1].astype(np.float32), nan=-99) > mosaic.LOSS_MIN
+    lost = land & final & (onset >= 0)
+
+    # Fire rasters per step, widened to MATCH_KM.
+    near = np.zeros((n_steps, *shape), bool)
+    fire = np.zeros((n_steps, *shape), bool)
     for lat, lon, d in points:
-        k = (round(lat / cell), round(lon / cell))
+        s = mosaic.step_of(mosaic.parse_date(d.replace("-", "")))
+        r, c = int((mosaic.NORTH - lat) / mosaic.RES), int((lon - mosaic.WEST) / mosaic.RES)
+        if 0 <= s < n_steps and 0 <= r < shape[0] and 0 <= c < shape[1]:
+            fire[s, r, c] = True
+    for s in range(n_steps):
+        if fire[s].any():
+            near[s] = distance_transform_edt(~fire[s]) * mosaic.RES * 111.32 <= MATCH_KM
+    window = near.copy()
+    for k in range(1, LAG_STEPS + 1):
+        window[k:] |= near[:-k]
+
+    def matched(rr: np.ndarray, cc: np.ndarray, on: np.ndarray) -> np.ndarray:
+        return window[on, rr, cc]
+
+    rr, cc = np.nonzero(lost)
+    hit = matched(rr, cc, onset[rr, cc])
+
+    # Chance, place by place: control pixels borrow onsets from the real burns in their cell.
+    rng = np.random.default_rng(0)
+    size = round(CELL_DEG / mosaic.RES)
+    cell = (rr // size) * 10000 + cc // size
+    ctrl_r, ctrl_c = np.nonzero(forest & ~lost & (onset < 0))
+    ctrl_cell = (ctrl_r // size) * 10000 + ctrl_c // size
+    keep = np.isin(ctrl_cell, np.unique(cell))
+    ctrl_r, ctrl_c, ctrl_cell = ctrl_r[keep], ctrl_c[keep], ctrl_cell[keep]
+    ctrl_on = np.empty(len(ctrl_r), np.int8)
+    order = np.argsort(cell)
+    cells, starts = np.unique(cell[order], return_index=True)
+    ends = np.append(starts[1:], len(order))
+    on_sorted = onset[rr, cc][order]
+    lookup = {c: on_sorted[a:b] for c, a, b in zip(cells, starts, ends)}
+    for c in np.unique(ctrl_cell):
+        idx = np.nonzero(ctrl_cell == c)[0]
+        ctrl_on[idx] = rng.choice(lookup[c], size=len(idx))
+    chance = matched(ctrl_r, ctrl_c, ctrl_on)
+
+    # Per burn.
+    labels, n = label(lost, structure=np.ones((3, 3)))
+    sizes = np.bincount(labels.ravel())
+    hit_by_label = np.bincount(labels[rr, cc], weights=hit, minlength=n + 1) > 0
+    big = np.nonzero(sizes[1:] >= 10)[0] + 1
+    burns = float(hit_by_label[big].mean()) if len(big) else float("nan")
+    out = {"match_km": MATCH_KM, "window_days": (LAG_STEPS + 1) * mosaic.STEP_DAYS,
+           "loss_matched": round(float(hit.mean()), 3), "chance_matched": round(float(chance.mean()), 3),
+           "burns_matched": round(burns, 3), "burns": int(len(big))}
+    print(out)
+    return out
+
+
+def thin(points: list[list], cell: float = 0.02) -> list[list]:
+    """For the map: keep the first detection in each cell (about 2 km) and 12-day step, so the browser draws tens of
+    thousands of dots, not 600k, and a time window of steps still shows every place that burned in it."""
+    first: dict[tuple[int, int, int], list] = {}
+    for lat, lon, d in points:
+        k = (round(lat / cell), round(lon / cell), mosaic.step_of(mosaic.parse_date(d.replace("-", ""))))  # per step too
         if k not in first or d < first[k][2]:
             first[k] = [lat, lon, d]  # the detection's own position, so the dots do not line up on a grid
     return sorted(first.values(), key=lambda p: p[2])
@@ -112,7 +192,9 @@ def main() -> None:
     """Fetch, score, write firms.json."""
     points = fetch(map_key())
     in_loss, in_forest = agreement(points)
+    timed = timed_agreement(points)
     out = {
+        "timed": timed,
         "points": thin(points),
         "detections": len(points),
         "near_km": NEAR_KM,
