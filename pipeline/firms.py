@@ -212,6 +212,41 @@ def thin(points: list[list], cell: float = 0.02) -> list[list]:
     return sorted(first.values(), key=lambda p: p[2])
 
 
+def write_layers(points: list[list]) -> None:
+    """One PNG per 12-day step with every detection from that step and the two before (36 days), at the radar grid.
+
+    Bright yellow where the detection lies within MATCH_KM of a radar burn that has appeared by that step; faint
+    elsewhere. No thinning: every nominal or high confidence detection is drawn.
+    """
+    from PIL import Image
+    from scipy.ndimage import binary_dilation
+    cached = np.load(mosaic.WORK / "mosaic.npz")
+    score = cached["score"]
+    n_steps, shape = score.shape[0], score.shape[1:]
+    land = mosaic.borneo_mask(shape)
+    final = land & (np.nan_to_num(score[-1].astype(np.float32), nan=-99) > mosaic.LOSS_MIN)
+    onset = np.full(shape, 99, np.int8)
+    for s in range(n_steps):
+        onset[(onset == 99) & final & (np.nan_to_num(score[s].astype(np.float32), nan=-99) > mosaic.LOSS_MIN)] = s
+    dist, (ir, ic) = distance_transform_edt(~final, return_indices=True)
+    near_onset = np.where(dist * mosaic.RES * 111.32 <= MATCH_KM, onset[ir, ic], 99)  # onset of the nearby burn
+    by_step = np.zeros((n_steps, *shape), bool)
+    for lat, lon, d in points:
+        s = mosaic.step_of(mosaic.parse_date(d.replace("-", "")))
+        r, c = int((mosaic.NORTH - lat) / mosaic.RES), int((lon - mosaic.WEST) / mosaic.RES)
+        if 0 <= s < n_steps and 0 <= r < shape[0] and 0 <= c < shape[1]:
+            by_step[s, r, c] = True
+    for s in range(n_steps):
+        seen = by_step[max(0, s - LAG_STEPS):s + 1].any(axis=0)
+        hit = seen & (near_onset <= s)
+        rgba = np.zeros((*shape, 4), np.uint8)
+        faint = seen & ~hit
+        rgba[faint] = (226, 204, 110, 120)
+        bright = binary_dilation(hit)  # a 3-pixel dot, about 750 m: readable next to the burns
+        rgba[bright] = (255, 226, 77, 255)
+        Image.fromarray(rgba).save(mosaic.WEB / f"fires_{s:02d}.png", optimize=True)
+
+
 def main() -> None:
     """Fetch, score, write firms.json."""
     points = fetch(map_key())
@@ -219,7 +254,7 @@ def main() -> None:
     timed = timed_agreement(points)
     out = {
         "timed": timed,
-        "points": near_loss(thin(points)),
+        # The map draws every detection from the fires_SS.png layers; the json keeps only the numbers.
         "detections": len(points),
         "near_km": NEAR_KM,
         "loss_near": round(in_loss, 3),
@@ -228,6 +263,7 @@ def main() -> None:
                       f"against {in_forest:.0%} of all forest."),
     }
     (mosaic.WEB / "firms.json").write_text(json.dumps(out, separators=(",", ":")))
+    write_layers(points)
     print(out["agreement"], f"{len(points)} detections")
 
 

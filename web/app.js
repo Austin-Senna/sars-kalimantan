@@ -36,8 +36,8 @@
   const loss = perStep("loss", bounds, "loss");
   const peatburn = perStep("peatburn", bounds, "peatburn");
   const smoke = meta.smoke ? perStep("smoke", region, "smoke", "feather") : [];
-  const fireRenderer = L.canvas({ pane: "fires" });
-  const fires = L.layerGroup().addTo(map);
+  // Every fire detection, drawn per step as an image (36 days up to that step; bright next to an appeared burn).
+  const fireLayers = perStep("fires", bounds, "fires", "fires");
   const cities = L.layerGroup().addTo(map);
   const cityMarkers = meta.smoke ? Object.entries(meta.smoke.cities).map(([name, c]) =>
     ({ name, c, m: L.marker(c.latlon, { interactive: false, icon: L.divIcon({ className: "city", iconSize: null }) }).addTo(cities) })) : [];
@@ -45,11 +45,10 @@
 
   // Burns are a few pixels wide at island zoom: give the loss pane a glow when zoomed out.
   const glow = () => map.getPane("loss").classList.toggle("glow", map.getZoom() < 8);
-  map.on("zoomend", () => { glow(); firesDrawnFor = null; drawFires(); });
+  map.on("zoomend", glow);
 
   // --- State: which layers show, and the current 12-day step.
   const view = { smoke: false, fires: false, peat: false };
-  let firesDrawnFor = null;
   let current = 0;
   function render() {
     const show = (el, on, o = 1) => { el.style.opacity = on ? o : 0; };
@@ -62,33 +61,16 @@
     loss.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
     peatburn.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
     smoke.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
+    fireLayers.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
     view.smoke ? cities.addTo(map) : cities.remove();
     for (const { name, c, m } of cityMarkers) {
       const v = c.aod[current];
       const level = v == null ? "none" : v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear";  // matches the scale bar
       m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null, html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
     }
-    drawFires();
     $("tPeat").checked = view.peat; $("tFires").checked = view.fires; $("tSmoke").checked = view.smoke;
     $("tPeat").disabled = $("tFires").disabled = view.smoke;  // hidden under the smoke anyway
     $("smokeHides").hidden = !view.smoke;
-  }
-
-  function drawFires() {
-    const key = view.fires && fireData ? current : null;
-    if (key === firesDrawnFor) return;
-    firesDrawnFor = key;
-    fires.clearLayers();
-    if (key == null) return;
-    // Only fires from this step and the two before it (36 days): the dots follow the fire front instead of piling up.
-    const end = steps[current].end, start = steps[Math.max(0, current - 2)].start;
-    const radius = map.getZoom() >= 8 ? 2.2 : 1.3;  // bigger dots once zoomed in to a region
-    // Fires within 1 km of a radar burn are bright; the rest stay faint, so the map shows the overlap, not just fire everywhere.
-    for (const [lat, lon, d, onset] of fireData.points) {
-      const hit = onset >= 0 && onset <= current;
-      if (d >= start && d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius: hit ? radius + 0.6 : radius * 0.8, stroke: false,
-        fillColor: hit ? "#ffe14d" : "#d8c46a", fillOpacity: hit ? 1 : 0.22, interactive: false, renderer: fireRenderer, pane: "fires" }));
-    }
   }
 
   // --- Time.
