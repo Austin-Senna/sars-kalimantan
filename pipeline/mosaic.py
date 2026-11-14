@@ -1,7 +1,7 @@
 """Build the 12-day canopy-loss mosaic of Indonesian Borneo from NISAR GCOV HV browse images.
 
-Per track-frame: sample every date onto a common lat/lon grid, take June as the baseline, and score
-loss as baseline HV minus current HV wherever June was forest-bright. A pixel counts as lost only when
+Per track-frame: sample every date onto a common lat/lon grid, take the looks before Jul 23 as the baseline, and score
+loss as baseline HV minus current HV wherever the baseline was forest-bright. A pixel counts as lost only when
 its two most recent looks both show the drop (a persistence filter against speckle and wet days).
 Track-frames are combined by averaging their latest scores. Writes the web layers to web/data/.
 """
@@ -12,30 +12,31 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from scipy.ndimage import uniform_filter
+from scipy.ndimage import binary_dilation, label, uniform_filter
 
 import georef
 
 ROOT = Path(__file__).parent
 RAW = ROOT / "data" / "raw"
+WORK = ROOT / "data" / "work"
+BASEMAP = ROOT.parent / "web" / "data" / "basemap.jpg"  # NASA GIBS Blue Marble, same bounds as the grid
 WEB = ROOT.parent / "web" / "data"
 
 WEST, EAST, SOUTH, NORTH = 108.5, 119.3, -4.3, 4.4
 RES = 0.0025  # degrees, about 280 m
-PROBE_EVERY = 4  # click-probe grid is RES * 4, about 1.1 km
 STEP0 = date(2026, 6, 17)  # first NISAR science-phase 12-day cycle
 STEP_DAYS = 12
-BASELINE_END = date(2026, 7, 1)  # June looks form the baseline
+BASELINE_END = date(2026, 7, 23)  # looks before the Aug-Oct peat-fire season form the baseline
 SMOOTH = 3  # grid pixels, boxcar
 FOREST_PCT = 40  # June HV above this percentile of the track-frame counts as canopy
 NOISE_K = 3.0  # a drop counts as loss above NOISE_K robust sigmas of the date-to-date noise
 LOSS_MIN = 1.0  # loss score threshold, in sigmas above the NOISE_K floor (score = drop / sigma - NOISE_K)
 
 
-def grid() -> tuple[np.ndarray, np.ndarray]:
+def grid(res: float = RES) -> tuple[np.ndarray, np.ndarray]:
     """Pixel-centre lon and lat arrays for the output grid, north row first."""
-    lons = WEST + RES * (np.arange(round((EAST - WEST) / RES)) + 0.5)
-    lats = NORTH - RES * (np.arange(round((NORTH - SOUTH) / RES)) + 0.5)
+    lons = WEST + res * (np.arange(round((EAST - WEST) / res)) + 0.5)
+    lats = NORTH - res * (np.arange(round((NORTH - SOUTH) / res)) + 0.5)
     return np.meshgrid(lons.astype(np.float64), lats.astype(np.float64))
 
 
@@ -44,14 +45,14 @@ def step_of(d: date) -> int:
     return (d - STEP0).days // STEP_DAYS
 
 
-def window(recs: list[dict]) -> tuple[slice, slice]:
+def window(recs: list[dict], res: float = RES) -> tuple[slice, slice]:
     """Grid rows and columns covering every footprint of a track-frame."""
     lon = [v for r in recs for v in r["lon"]]
     lat = [v for r in recs for v in r["lat"]]
-    c0 = max(0, int((min(lon) - WEST) / RES))
-    c1 = min(round((EAST - WEST) / RES), int((max(lon) - WEST) / RES) + 1)
-    r0 = max(0, int((NORTH - max(lat)) / RES))
-    r1 = min(round((NORTH - SOUTH) / RES), int((NORTH - min(lat)) / RES) + 1)
+    c0 = max(0, int((min(lon) - WEST) / res))
+    c1 = min(round((EAST - WEST) / res), int((max(lon) - WEST) / res) + 1)
+    r0 = max(0, int((NORTH - max(lat)) / res))
+    r1 = min(round((NORTH - SOUTH) / res), int((NORTH - min(lat)) / res) + 1)
     return slice(r0, r1), slice(c0, c1)
 
 
@@ -64,7 +65,13 @@ def smooth(a: np.ndarray) -> np.ndarray:
         return np.where(den > 0.5, num / den, np.nan)
 
 
-def load_tf(recs: list[dict], lon: np.ndarray, lat: np.ndarray, layer: str) -> list[tuple[date, np.ndarray]]:
+def parse_date(yyyymmdd: str) -> date:
+    """Date from a YYYYMMDD string."""
+    return date(int(yyyymmdd[:4]), int(yyyymmdd[4:6]), int(yyyymmdd[6:]))
+
+
+def load_tf(recs: list[dict], lon: np.ndarray, lat: np.ndarray, layer: str,
+            smoothing: bool = True) -> list[tuple[date, np.ndarray]]:
     """Sampled, smoothed looks for one track-frame and layer, oldest first."""
     looks = []
     for r in recs:
@@ -78,8 +85,8 @@ def load_tf(recs: list[dict], lon: np.ndarray, lat: np.ndarray, layer: str) -> l
         if fitted is None:
             print(f"  skip {r['key']} {layer}: corners do not fit")
             continue
-        looks.append((date.fromisoformat(r["date"][:4] + "-" + r["date"][4:6] + "-" + r["date"][6:]),
-                      smooth(georef.sample(img, *fitted, lon, lat))))
+        sampled = georef.sample(img, *fitted, lon, lat)
+        looks.append((parse_date(r["date"]), smooth(sampled) if smoothing else sampled))
     return sorted(looks, key=lambda t: t[0])
 
 
@@ -102,27 +109,28 @@ def main() -> None:
         by_tf.setdefault(r["tf"], []).append(r)
     glon, glat = grid()
     shape = glon.shape
-    last = max(step_of(date.fromisoformat(f"{r['date'][:4]}-{r['date'][4:6]}-{r['date'][6:]}")) for r in inv)
+    last = max(step_of(parse_date(r["date"])) for r in inv)
     n_steps = last + 1
 
     score_sum = np.zeros((n_steps, *shape), np.float32)
     score_n = np.zeros((n_steps, *shape), np.uint8)
     base_sum = np.zeros(shape, np.float32)
     base_n = np.zeros(shape, np.uint8)
+    forest_n = np.zeros(shape, np.uint8)
 
-    only = set(sys.argv[1:])
+    only = set(sys.argv[1:]) - {"--write"}
     for tf, recs in sorted(by_tf.items()):
         if only and tf not in only:
             continue
         rows, cols = window(recs)
         lon, lat = glon[rows, cols], glat[rows, cols]
         hv = load_tf(recs, lon, lat, "HVHV")
-        june = [a for d, a in hv if d < BASELINE_END]
-        if not june or len(hv) - len(june) < 2:
-            print(f"{tf}: {len(june)} June looks, {len(hv) - len(june)} later; skipped")
+        early = [a for d, a in hv if d < BASELINE_END]
+        if not early or len(hv) - len(early) < 2:
+            print(f"{tf}: {len(early)} baseline looks, {len(hv) - len(early)} later; skipped")
             continue
         with np.errstate(all="ignore"):
-            base = np.nanmean(june, axis=0)
+            base = np.nanmedian(early, axis=0)
         if np.isfinite(base).sum() < 10000:
             print(f"{tf}: too little valid June data; skipped")
             continue
@@ -135,9 +143,10 @@ def main() -> None:
         by_step: dict[int, np.ndarray] = {}
         for d, a in later:
             drop = np.where(forest, (base - a) / sigma - NOISE_K, np.nan)
-            persistent = drop if prev is None else np.fmin(drop, prev)
-            latest = np.where(np.isfinite(persistent), persistent, latest)
-            prev = drop
+            if prev is not None:  # loss needs two consecutive looks that agree
+                persistent = np.where(np.isfinite(drop) & np.isfinite(prev), np.minimum(drop, prev), np.nan)
+                latest = np.where(np.isfinite(persistent), persistent, latest)
+            prev = np.where(np.isfinite(drop), drop, prev) if prev is not None else drop
             by_step[step_of(d)] = latest.copy()
         carry = np.full(base.shape, np.nan, np.float32)
         for s in range(n_steps):
@@ -149,31 +158,50 @@ def main() -> None:
         ok = np.isfinite(base)
         base_sum[rows, cols][ok] += base[ok]
         base_n[rows, cols][ok] += 1
-        print(f"{tf}: {len(june)} June looks, {len(later)} later, sigma {sigma:.1f}")
-    write(score_sum, score_n, base_sum, base_n, glat, n_steps)
-
-
-def write(score_sum, score_n, base_sum, base_n, glat, n_steps) -> None:
-    """Write PNG layers and steps.json."""
-    WEB.mkdir(parents=True, exist_ok=True)
+        forest_n[rows, cols][forest] += 1
+        print(f"{tf}: {len(early)} baseline looks, {len(later)} later, sigma {sigma:.1f}")
     with np.errstate(all="ignore"):
         base = base_sum / base_n
-        score = score_sum / score_n
-    Image.fromarray(np.nan_to_num(base, nan=0).clip(0, 255).astype(np.uint8)).save(WEB / "base_hv.png", optimize=True)
-    forest = np.isfinite(score[0]) | np.isfinite(score[-1])
+        score = (score_sum / score_n).astype(np.float16)
+    WORK.mkdir(parents=True, exist_ok=True)
+    np.savez(WORK / "mosaic.npz", score=score, base=base, forest=forest_n > 0)
+    write()
+
+
+def borneo_mask(shape: tuple[int, int]) -> np.ndarray:
+    """Land pixels of the island of Borneo, from the Blue Marble basemap (sea is blue)."""
+    rgb = np.asarray(Image.open(BASEMAP).convert("RGB").resize(shape[::-1], Image.BILINEAR)).astype(np.int16)
+    land = ~((rgb[..., 2] > rgb[..., 0] + 15) & (rgb[..., 2] > rgb[..., 1]))
+    labels, _ = label(land)
+    centre = labels[shape[0] // 2, shape[1] // 2]  # 0.05 N, 113.9 E is inland Borneo
+    return labels == centre
+
+
+def write() -> None:
+    """Write PNG layers and steps.json from the cached mosaic."""
+    WEB.mkdir(parents=True, exist_ok=True)
+    cached = np.load(WORK / "mosaic.npz")
+    score, base = cached["score"].astype(np.float32), cached["base"]
+    land = borneo_mask(base.shape)
+    glat = grid()[1]
+    shade = np.nan_to_num(base * 0.8, nan=0).clip(0, 255).astype(np.uint8)
+    alpha = np.where(land & np.isfinite(base), 255, 0).astype(np.uint8)
+    Image.fromarray(np.dstack([shade, shade, shade, alpha])).save(WEB / "base_hv.png", optimize=True)
+    forest = cached["forest"] & land
     rgba = np.zeros((*forest.shape, 4), np.uint8)
-    rgba[forest] = (126, 224, 190, 90)
+    rgba[forest] = (126, 224, 190, 38)
     Image.fromarray(rgba).save(WEB / "forest.png", optimize=True)
     km2_px = (RES * 111.32) ** 2 * np.cos(np.radians(glat))
     steps = []
-    for s in range(n_steps):
-        lost = np.isfinite(score[s]) & (score[s] > LOSS_MIN)
-        t = np.clip((score[s] - LOSS_MIN) / 4, 0, 1)
+    for s in range(score.shape[0]):
+        lost = land & np.isfinite(score[s]) & (score[s] > LOSS_MIN)
+        t = np.nan_to_num(np.clip((score[s] - LOSS_MIN) / 4, 0, 1), nan=1)
         img = np.zeros((*lost.shape, 4), np.uint8)
         img[..., 0] = 255
         img[..., 1] = (190 * (1 - t)).astype(np.uint8)
         img[..., 2] = 40
-        img[..., 3] = np.where(lost, 220, 0)
+        shown = binary_dilation(lost)  # one pixel of halo so small burns read at island zoom; km2 uses `lost`
+        img[..., 3] = np.where(lost, 255, np.where(shown, 150, 0))
         Image.fromarray(img).save(WEB / f"loss_{s:02d}.png", optimize=True)
         start = STEP0 + timedelta(days=STEP_DAYS * s)
         steps.append({"step": s, "start": start.isoformat(),
@@ -185,4 +213,4 @@ def write(score_sum, score_n, base_sum, base_n, glat, n_steps) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    write() if sys.argv[1:] == ["--write"] else main()
