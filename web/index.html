@@ -36,6 +36,10 @@
         <label><input type="checkbox" id="tSmoke"> Smoke <span class="hint">what normal satellites see</span></label>
         <label><input type="checkbox" id="tCO"> Fire gas <span class="hint">carbon monoxide, NASA AIRS</span></label>
         <p class="hint" id="smokeHides" hidden>Smoke is on: the radar layers are hidden under it.</p>
+        <div id="exploreScales" hidden>
+          <div class="gas-aod"><div class="aodbar"></div><div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div></div>
+          <div class="gas-co" hidden><div class="cobar"></div><div class="aodticks"><span style="left:0">80 June</span><span style="left:45%">200</span><span style="right:0">330+ ppb</span></div></div>
+        </div>
       </div>
       <div class="jumps">
         <button type="button" class="jump" data-jump="ketapang">Ketapang peat dome →</button>
@@ -50,7 +54,7 @@
       </div>
       <p class="probenote" id="probeNote"></p>
       <p class="legend"><span class="hv"></span>leaf echo (HV) <span class="hh"></span>ground and trunk echo (HH)</p>
-      <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
+      <svg id="chart" viewBox="0 0 300 100" role="img" aria-label="Radar brightness over time"></svg>
     </section>
 
     <p class="limits">Radar values are relative brightness from NISAR browse images, not calibrated backscatter. Radar map: Borneo south of 4.2° N. Sources and method: see the README.</p>

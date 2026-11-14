@@ -242,13 +242,13 @@ def write_layers(points: list[list]) -> None:
         hit = seen & (near_onset <= s)
         # Aggregate into soft clusters (density over about 1.5 km) so fire areas stay visible at island zoom,
         # where a single 280 m pixel is smaller than a screen pixel.
-        dens = gaussian_filter(seen.astype(np.float32), 5)
-        a_all = np.clip(dens * 9, 0, 1)
+        dens = gaussian_filter(seen.astype(np.float32), 3)
+        a_all = np.clip(dens * 6, 0, 1)
         dens_hit = gaussian_filter(binary_dilation(hit, iterations=2).astype(np.float32), 3)
         a_hit = np.clip(dens_hit * 3, 0, 1)
         rgba = np.zeros((*shape, 4), np.uint8)
-        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 255, 214, 70        # other fires: same yellow, see-through
-        rgba[..., 3] = (a_all * 105).astype(np.uint8)
+        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 255, 170, 50        # other fires: warm orange, see-through (reads as fire, not khaki)
+        rgba[..., 3] = (a_all * 95).astype(np.uint8)
         top = a_hit > 0.05                                              # fires next to a radar burn: solid yellow on top
         rgba[top, 0], rgba[top, 1], rgba[top, 2] = 255, 226, 60
         rgba[top, 3] = np.maximum(rgba[top, 3], (a_hit[top] * 255).astype(np.uint8))

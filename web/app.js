@@ -22,7 +22,7 @@
   L.control.zoom({ position: "topright" }).addTo(map);
   map.attributionControl.setPrefix(false);
   map.attributionControl.addAttribution("Radar: NISAR GCOV (NASA/ISRO, ASF DAAC) · Fires: NASA FIRMS · " +
-    "Smoke: NASA VIIRS Deep Blue AOD · Basemap: NASA Blue Marble (GIBS) · Peat: Peat-ML");
+    "Smoke: NASA VIIRS Deep Blue AOD · CO: NASA AIRS · Optical: NASA OPERA · Basemap: NASA Blue Marble (GIBS) · Peat: Peat-ML");
   const pane = (name, z) => { const p = map.createPane(name); p.style.zIndex = z; return p; };
   pane("radar", 402); pane("peat", 405); pane("fires", 410); pane("loss", 420); pane("peatburn", 425);
   pane("smoke", 430); pane("probe", 600);
@@ -55,7 +55,7 @@
   const level = (v) => v == null ? "none" : view.gas === "co"
     ? (v >= 200 ? "thick" : v >= 110 ? "hazy" : "clear")   // CO: June is about 80 ppbv
     : (v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear");    // haze: matches the scale bar
-  const fmtReading = (v) => v == null ? "no reading" : view.gas === "co" ? `${v}` : v.toFixed(1);
+  const fmtReading = (v) => v == null ? "no reading" : view.gas === "co" ? `${v} ppb` : v.toFixed(1);
   let current = 0;
   function render() {
     const show = (el, on, o = 1) => { el.style.opacity = on ? o : 0; };
@@ -73,7 +73,7 @@
     view.smoke ? cities.addTo(map) : cities.remove();
     for (const { name, m } of cityMarkers) {
       const v = reading(name, current);
-      m.setIcon(L.divIcon({ className: `city ${level(v)}`, iconSize: null, html: `<b>${name}</b> ${fmtReading(v)}` }));
+      m.setIcon(L.divIcon({ className: `city ${level(v)} city-${name.replace(/\W/g, "")}`, iconSize: null, html: `<b>${name}</b> ${fmtReading(v)}` }));
     }
     document.querySelectorAll("[data-gas]").forEach((b) => b.classList.toggle("on", b.dataset.gas === view.gas));
     document.querySelectorAll(".gas-aod").forEach((el) => { el.hidden = view.gas !== "aod"; });
@@ -82,6 +82,8 @@
     $("tSmoke").checked = view.smoke && view.gas === "aod"; $("tCO").checked = view.smoke && view.gas === "co";
     $("tPeat").disabled = $("tFires").disabled = view.smoke;  // hidden under the smoke anyway
     $("smokeHides").hidden = !view.smoke;
+    $("smokeHides").textContent = `${view.gas === "co" ? "Fire gas" : "Smoke"} is on: the radar layers are hidden under it.`;
+    $("exploreScales").hidden = !view.smoke;
   }
 
   // --- Time.
@@ -203,7 +205,7 @@
   function drawChart() {
     if (!probeAt) return;
     const svg = $("chart");
-    const W = 300, H = 130, l = 30, r = 6, t = 8, b = 22;
+    const W = 300, H = 100, l = 30, r = 6, t = 6, b = 18;  // wide and short: fits under the chapter text
     const t0 = Date.parse(steps[0].start), t1 = Date.parse(steps[last].end);
     const xs = (d) => l + ((Date.parse(d) - t0) / (t1 - t0)) * (W - l - r);
     // Each line in % change from its own first (June) value. The axis spans at least -25% to +25% so ordinary
@@ -242,7 +244,7 @@
     const [la, lo] = KETAPANG;
     flyTo(L.latLngBounds([[la - 0.25, lo - 0.3], [la + 0.25, lo + 0.3]]), { duration: 1.4 });  // centred in the visible map
     if (arrive) map.off("moveend", arrive);
-    arrive = () => { arrive = null; openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series, chapter < EXPLORE); };
+    arrive = () => { arrive = null; openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series, chapter < EXPLORE && !narrow()); };
     map.once("moveend", arrive);
   };
 
@@ -260,12 +262,13 @@
   const chapters = [
     {
       title: "Smoke hid the fire season",
-      body: "Aug to Oct 2026: haze from burning forest and peat covered Borneo and reached Singapore. This is what normal satellites saw.",
+      body: `<span class="gas-aod">Aug to Oct 2026: haze from burning forest and peat covered Borneo and reached Singapore. This is what normal satellites saw.</span>` +
+        `<span class="gas-co" hidden>Fire gas: carbon monoxide from the burning, measured by NASA's AIRS even through haze. By late October it was 3.5 to 4 times its June level at every city.</span>`,
       widget: (meta.co ? `<div class="seg"><button type="button" data-gas="aod">Haze</button><button type="button" data-gas="co">Fire gas (CO)</button></div>` : "") +
         `<p class="cityline" data-live="cities"></p>
         <div class="gas-co" hidden><div class="cobar"></div>
-          <div class="aodticks"><span style="left:0">80 normal</span><span style="left:40%">200</span><span style="right:0">350 ppbv</span></div>
-          <p class="hint">Carbon monoxide, a gas from burning (smouldering peat makes the most), in parts per billion, 5 km up (NASA AIRS). About 4× its June level by October, at every city.</p></div>
+          <div class="aodticks"><span style="left:0">80 June</span><span style="left:45%">200</span><span style="right:0">330+ ppb</span></div>
+          <p class="hint">Carbon monoxide in parts per billion, 5 km up (NASA AIRS). Smouldering peat makes the most of it.</p></div>
         <div class="gas-aod"><div class="aodbar"></div>
         <div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div>
         <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p></div>`,
@@ -280,7 +283,7 @@
     },
     {
       title: "It lines up with fire",
-      body: "Yellow dots are NASA fire detections from the 36 days up to the slider date. Bright ones sit next to a radar burn.",
+      body: "The glow is NASA fire detections from the 36 days up to the slider date. Bright yellow sits right next to a radar burn.",
       widget: near == null ? "" : `
         <div class="headline"><span class="big">${Math.round(near / chance)}×</span><span>more fire than chance</span></div>
         <div class="bars two">
@@ -297,7 +300,7 @@
         "Ketapang's peat dome is West Kalimantan's biggest burn.",
       // Two honest ends: the floor counts only peat loss a second NASA source confirmed; the top counts all radar loss.
       widget: (optical && optical.confirmed_co2_mt
-        ? `<div class="big">${Math.floor(optical.confirmed_co2_mt[0])}–${Math.round(lastStep.co2_mt)}</div><small>million tonnes of CO₂: ${Math.floor(optical.confirmed_co2_mt[0])} from peat loss a second satellite confirmed, ${Math.round(lastStep.co2_mt)} from all radar loss on peat. Like ${Math.round(Math.floor(optical.confirmed_co2_mt[0]) / 4.6)}–${Math.round(lastStep.cars_m)} million cars for a year.</small>`
+        ? `<div class="big">${Math.floor(optical.confirmed_co2_mt[0])}–${Math.round(lastStep.co2_mt)}</div><small>million tonnes of CO₂ (low end: confirmed by a second satellite; high end: all radar loss on peat).<span class="carline"> Like ${Math.round(Math.floor(optical.confirmed_co2_mt[0]) / 4.6)}–${Math.round(lastStep.cars_m)} million cars for a year.</span></small>`
         : `<div class="big" data-live="co2"></div><small>million tonnes of CO₂ (estimate, <span data-live="co2short"></span>): <span data-live="cars"></span></small>`) + `
         <p class="keys"><span><i class="key peat"></i>peat</span><span><i class="key peatburn"></i>burned peat</span><span><i class="key red"></i>other burns</span></p>`,
       enter() { Object.assign(view, { smoke: false, fires: false, peat: true }); stop(); setStep(last); ketapangJump(); },
@@ -328,7 +331,7 @@
       const c = chapters[n];
       $("chNo").textContent = `${n + 1} of ${chapters.length}`;
       $("chTitle").textContent = c.title;
-      $("chBody").textContent = c.body;
+      $("chBody").innerHTML = c.body;  // chapter text is ours, not user input
       $("chWidget").innerHTML = c.widget;
       c.enter();
     } else {
@@ -366,6 +369,7 @@
     view.smoke = e.target.checked; if (view.smoke) view.gas = gas;
     setStep(current);
     if (view.smoke && !was) { closeProbe(); flyTo(region); }
+    if (!view.smoke && was) flyTo(bounds);  // back to the island the radar covers
   };
   $("tSmoke").addEventListener("change", smokeToggle("aod"));
   $("tCO").addEventListener("change", smokeToggle("co"));

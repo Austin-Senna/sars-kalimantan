@@ -19,7 +19,7 @@ import smoke
 LAYERS = ("AIRS_L3_Carbon_Monoxide_500hPa_Volume_Mixing_Ratio_Daily_Day",
           "AIRS_L3_Carbon_Monoxide_500hPa_Volume_Mixing_Ratio_Daily_Night")
 COLORMAP = "https://gibs.earthdata.nasa.gov/colormaps/v1.3/AIRS_Carbon_Monoxide_Volume_Mixing_Ratio.xml"
-LOW, HIGH = 100.0, 350.0  # ppbv: transparent at June-like levels, full colour at the colormap ceiling
+LOW, HIGH = 95.0, 330.0  # ppbv: transparent at June-like levels (about 80), saturated at the fire-season peak
 
 
 def main() -> None:
@@ -50,11 +50,15 @@ def main() -> None:
         # AIRS L3 cells are 1 degree (40 of our pixels): a wide fill and smooth turns the blocks into a plume.
         mean = smoke.fill(np.where(np.isfinite(raw[s]), raw[s], nb), sigma=14, reach=30)
         t = np.nan_to_num(np.clip((mean - LOW) / (HIGH - LOW), 0, 1), nan=0)
-        light, dark = np.array([196, 150, 255], np.float32), np.array([118, 20, 150], np.float32)  # violet: not smoke, fire or loss
+        # Three-stop violet ramp (light lilac, magenta, deep violet) so 150, 220 and 300 ppbv look different.
+        stops = np.array([[215, 175, 255], [200, 70, 225], [120, 20, 165]], np.float32)
+        lo_half = np.clip(t * 2, 0, 1)[..., None]
+        hi_half = np.clip(t * 2 - 1, 0, 1)[..., None]
+        col = np.where(t[..., None] < 0.5, stops[0] + (stops[1] - stops[0]) * lo_half, stops[1] + (stops[2] - stops[1]) * hi_half)
         rgba = np.zeros((smoke.H, smoke.W, 4), np.uint8)
-        rgba[..., :3] = (light + (dark - light) * t[..., None]).astype(np.uint8)
-        a = np.where(np.isfinite(mean), t * 175, 0)  # linear and capped, so plume structure and land still show
-        rgba[..., 3] = ((a // 12) * 12).astype(np.uint8)  # rounded alpha keeps the PNG small
+        rgba[..., :3] = col.astype(np.uint8)
+        a = np.where(np.isfinite(mean), np.clip((mean - LOW) / 110, 0, 1) ** 0.7 * 160, 0)  # visible early, capped so land shows
+        rgba[..., 3] = ((a // 5) * 5).astype(np.uint8)  # fine alpha steps: no visible terracing
         Image.fromarray(rgba).save(mosaic.WEB / f"co_{s:02d}.png", optimize=True)
         for name, (lat, lon) in smoke.CITIES.items():
             r, c = int((smoke.NORTH - lat) / 0.025), int((lon - smoke.WEST) / 0.025)
