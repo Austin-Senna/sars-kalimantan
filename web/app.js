@@ -6,10 +6,12 @@
   const KETAPANG = meta.ketapang || [-2.2, 110.3];
 
   // Canvas rendering: tens of thousands of fire dots stay smooth while scrubbing.
-  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: bounds.pad(0.3), preferCanvas: true });
+  // No maxBounds on phones: the view there spans more latitude than the island, and the clamp would undo the fit above the sheet.
+  const map = L.map("map", { zoomSnap: 0.25, attributionControl: true, maxBounds: window.innerWidth > 700 ? bounds.pad(0.3) : null, preferCanvas: true, zoomControl: false });
+  L.control.zoom({ position: "topright" }).addTo(map);  // top left sits under the panel
   const narrow = () => window.innerWidth <= 700;
   const fit = () => map.fitBounds(bounds, narrow()
-    ? { paddingBottomRight: [0, window.innerHeight * 0.5] }
+    ? { paddingBottomRight: [0, document.getElementById("panel").offsetHeight], paddingTopLeft: [0, 8] }
     : { paddingTopLeft: [400, 0] });
   fit();
   map.attributionControl.setPrefix(false);
@@ -20,9 +22,15 @@
   L.imageOverlay("data/base_hv.png", bounds, { opacity: 0.85, className: "pixelated" }).addTo(map);
   const forest = L.imageOverlay("data/forest.png", bounds).addTo(map);
 
+  map.createPane("loss").style.zIndex = 420;  // above the fire dots (410), which sit above the radar base (400)
   // One overlay per step, all preloaded, only the current one visible: scrubbing never waits on the network.
-  const loss = steps.map((s) => L.imageOverlay(`data/loss_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0 }).addTo(map));
+  const loss = steps.map((s) => L.imageOverlay(`data/loss_${String(s.step).padStart(2, "0")}.png`, bounds, { opacity: 0, pane: "loss" }).addTo(map));
 
+  // Fires draw in their own pane between the radar base and the loss layers, so the red stays on top.
+  const firePane = map.createPane("fires");
+  firePane.style.zIndex = 410;
+  firePane.style.opacity = 0.45;  // dense at island zoom: dim enough that the red loss reads on top
+  const fireRenderer = L.canvas({ pane: "fires" });
   const fires = L.layerGroup();
   let fireData = null;
   try {
@@ -46,6 +54,9 @@
     if (s.co2_mt != null) {
       document.getElementById("co2wrap").hidden = false;
       document.getElementById("co2").textContent = s.co2_mt.toFixed(s.co2_mt < 10 ? 1 : 0);
+      const r = (v) => v.toFixed(v < 10 ? 1 : 0);
+      document.getElementById("co2label").textContent = s.co2_mt ? `Mt CO₂ from burning peat (IPCC range ${r(s.co2_lo)} to ${r(s.co2_hi)})` : "Mt CO₂ from burning peat";
+      document.getElementById("co2wrap").title = meta.co2_note || "";
     }
     slider.value = i;
     drawFires();
@@ -57,7 +68,7 @@
     if (!fireData || !document.getElementById("tFires").checked) return;
     const end = steps[current].end;
     for (const [lat, lon, d] of fireData.points) {
-      if (d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius: 2, stroke: false, fillColor: "#ffd23f", fillOpacity: 0.8, interactive: false }));
+      if (d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius: 1.2, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
     }
     const a = document.getElementById("agree");
     if (fireData.agreement) {

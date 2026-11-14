@@ -102,3 +102,6 @@ PITCH.md
 # Pipeline downloads (regenerable)
 pipeline/data/raw/
 pipeline/data/work/
+
+# Playwright MCP screenshots and logs
+.playwright-mcp/

@@ -25,6 +25,7 @@ uv run python fetch.py       # download the public HH and HV browse images (abou
 uv run python mosaic.py      # 12-day HV loss mosaic -> web/data/loss_*.png, steps.json
 uv run python probe.py       # per-pixel HV and HH history for the click-in chart
 uv run python firms.py       # fire detections and agreement (needs FIRMS_MAP_KEY in .env)
+uv run python co2.py         # CO2 from lost area on peat (needs the Peat-ML GeoTIFF in data/raw/peat/)
 ```
 
 ## Method
@@ -34,18 +35,23 @@ uv run python firms.py       # fire detections and agreement (needs FIRMS_MAP_KE
 - **Stretch:** each browse image is stretched to its own 5th and 95th percentiles, so every date is matched to the pre-season baseline on its forest pixels before comparison.
 - **Loss:** baseline is the median of every look before Jul 23 (before the Aug to Oct fire season). A pixel counts as lost when its HV drops by more than 3 robust standard deviations of that track-frame's own date-to-date noise above the threshold, in two consecutive looks.
 - **Mask:** land of the island of Borneo, from the NASA Blue Marble basemap.
+- **Fire check:** 65% of the radar-loss area lies within 2 km of a NASA FIRMS VIIRS fire detection, against 34% of all forest. FIRMS standard processing to Jul 31, near real time after.
+- **CO2:** lost area on peat (Peat-ML peat fraction) x 353 t dry matter burnt per ha x 1.70 t CO2 per t (IPCC 2013 Wetlands Supplement, Tables 2.6 and 2.7, tropical drained-peat wildfire). The range uses the IPCC 95% interval for fuel burnt. Peat only: the trees above it are not counted.
 
 ## Limits
 
 - Values are relative browse brightness, not calibrated backscatter.
 - July reads zero by construction: it is part of the baseline.
 - Gaps on the map are missing or partial NISAR frames.
+- The CO2 figure assumes every lost pixel on peat burned to the IPCC default depth. Peat-ML is a 1/12 degree (about 9 km) map, so the peat share is coarse.
 
 ## Sources
 
 - NISAR L2 GCOV provisional, NASA/ISRO, via the ASF DAAC: https://nisar-docs.asf.alaska.edu/gcov/
 - NASA CMR granule search: https://cmr.earthdata.nasa.gov/
 - NASA FIRMS VIIRS active fire detections: https://firms.modaps.eosdis.nasa.gov/
+- Peat-ML global peatland extent, Melton et al. (2022), CC-BY 4.0: https://doi.org/10.5281/zenodo.7352284
+- IPCC (2014), 2013 Supplement to the 2006 IPCC Guidelines: Wetlands, Chapter 2, Tables 2.6 and 2.7: https://www.ipcc-nggip.iges.or.jp/public/wetlands/
 - Basemap: NASA Blue Marble via GIBS: https://gibs.earthdata.nasa.gov/
 - Leaflet 1.9.4 (BSD-2-Clause): https://leafletjs.com/
 
