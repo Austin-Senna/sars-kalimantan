@@ -26,18 +26,25 @@
 
     <section class="explore" id="explore" hidden>
       <div class="stats">
-        <div><span class="big loss" data-live="km2">0</span><small>km² of tree cover lost</small></div>
-        <div><span class="big" data-live="co2">0</span><small>Mt CO₂ from burning peat</small></div>
+        <div><span class="big loss" data-live="km2">0</span><small>km² of tree cover lost (radar)</small></div>
+        <div><span class="big" data-live="co2">0</span><small>Mt CO₂ from peat (upper estimate)</small></div>
       </div>
+      <p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>lost (radar)</span><span><i class="key grey"></i>no tree cover</span></p>
       <div class="layers">
-        <label><input type="checkbox" id="tPeat"> Peat <span class="hint">dark = burned peat</span></label>
-        <label><input type="checkbox" id="tFires"> NASA fire detections</label>
+        <label><input type="checkbox" id="tPeat"> Peat <span class="hint"><i class="key peat"></i>peat <i class="key peatburn"></i>burned peat</span></label>
+        <label><input type="checkbox" id="tFires"> NASA fire detections <span class="hint">36 days up to the slider date</span></label>
         <label><input type="checkbox" id="tSmoke"> Smoke <span class="hint">what normal satellites see</span></label>
+        <label><input type="checkbox" id="tCO"> Fire gas <span class="hint">carbon monoxide, NASA AIRS</span></label>
+        <p class="hint" id="smokeHides" hidden>Smoke is on: the radar layers are hidden under it.</p>
+        <div id="exploreScales" hidden>
+          <div class="gas-aod"><div class="aodbar"></div><div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div></div>
+          <div class="gas-co" hidden><div class="cobar"></div><div class="aodticks"><span style="left:0">80 June</span><span style="left:45%">200</span><span style="right:0">330+ ppb</span></div></div>
+        </div>
       </div>
       <div class="jumps">
         <button type="button" class="jump" data-jump="ketapang">Ketapang peat dome →</button>
       </div>
-      <p class="hint">Click anywhere on the map for that spot's radar history.</p>
+      <p class="hint">Click green or red for a spot's radar history.</p>
     </section>
 
     <section class="probe" id="probe" hidden>
@@ -45,25 +52,26 @@
         <strong id="probeTitle">This spot</strong>
         <button id="probeClose" type="button" aria-label="Close">×</button>
       </div>
-      <svg id="chart" viewBox="0 0 300 130" role="img" aria-label="Radar brightness over time"></svg>
       <p class="probenote" id="probeNote"></p>
-      <p class="legend"><span class="hv"></span>HV: echo off leaves and branches <span class="hh"></span>HH: off ground and trunks</p>
+      <p class="legend"><span class="hv"></span>leaf echo (HV) <span class="hh"></span>ground and trunk echo (HH)</p>
+      <svg id="chart" viewBox="0 0 300 100" role="img" aria-label="Radar brightness over time"></svg>
     </section>
 
-    <section class="timeline">
-      <div class="when"><span id="date">June 17 to 28</span></div>
-      <div class="time">
-        <button id="play" type="button" aria-label="Play">▶</button>
-        <input id="slider" type="range" min="0" max="0" value="0" aria-label="12-day step">
+    <p class="limits">Radar values are relative brightness from NISAR browse images, not calibrated backscatter. Radar map: Borneo south of 4.2° N. Sources and method: see the README.</p>
+
+    <div class="dock">
+      <section class="timeline">
+        <div class="when"><span id="date">June 17 to 28</span></div>
+        <div class="time">
+          <button id="play" type="button" aria-label="Play">▶</button>
+          <input id="slider" type="range" min="0" max="0" value="0" aria-label="12-day step">
+        </div>
+      </section>
+      <div class="nav">
+        <button id="prev" type="button">← Back</button>
+        <button id="next" type="button" class="primary">Next →</button>
       </div>
-    </section>
-
-    <div class="nav">
-      <button id="prev" type="button">← Back</button>
-      <button id="next" type="button" class="primary">Next →</button>
     </div>
-
-    <p class="limits">Radar values are relative brightness from NISAR browse images, not calibrated backscatter. Sources and method: see the README.</p>
   </aside>
 
   <script src="vendor/leaflet.js"></script>

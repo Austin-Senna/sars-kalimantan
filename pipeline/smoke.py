@@ -33,13 +33,14 @@ CITIES = {  # name: (lat, lon)
 }
 
 
-def colormap() -> dict[tuple[int, int, int], float]:
-    """RGB -> AOD (bin midpoint) from the GIBS colormap; no-data entries are left out."""
-    xml = urllib.request.urlopen(COLORMAP, timeout=60).read().decode()
+def colormap(url: str = COLORMAP) -> dict[tuple[int, int, int], float]:
+    """RGB -> value (bin midpoint) from a GIBS colormap; no-data entries are left out."""
+    xml = urllib.request.urlopen(url, timeout=60).read().decode()
     lut = {}
     for rgb, value in re.findall(r'<ColorMapEntry rgb="(\d+,\d+,\d+)" transparent="false"[^>]*?value="\[([^\])]*)', xml):
         lo, *hi = [float(v) for v in value.split(",")]
-        lut[tuple(int(c) for c in rgb.split(","))] = (lo + hi[0]) / 2 if hi else lo
+        ends = [v for v in [lo, *hi] if np.isfinite(v)]  # open-ended bins (-INF or +INF) take their finite end
+        lut[tuple(int(c) for c in rgb.split(","))] = sum(ends) / len(ends) if ends else 0.0
     return lut
 
 

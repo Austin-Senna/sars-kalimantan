@@ -71,6 +71,9 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 .bar.dim span { background: #4a524e; }
 .bar b { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 20px; }
 
+.second { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: #c9d3cd; }
+.second b { color: var(--ink); }
+
 /* Explore */
 .explore { display: grid; gap: 18px; }
 .explore[hidden] { display: none; }
@@ -91,8 +94,8 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 #chart { width: 100%; height: auto; margin-top: 6px; }
 #chart text { fill: var(--muted); font-size: 9px; }
 #chart .grid { stroke: var(--line); }
-#chart path.hv { stroke: var(--hv); fill: none; stroke-width: 2.5; }
-#chart path.hh { stroke: var(--hh); fill: none; stroke-width: 2.5; }
+#chart path.hv { stroke: var(--hv); fill: none; stroke-width: 3; }
+#chart path.hh { stroke: var(--hh); fill: none; stroke-width: 1.5; }
 #chart circle.hv { fill: var(--hv); }
 #chart circle.hh { fill: var(--hh); }
 #chart .now { stroke: var(--loss); stroke-dasharray: 3 3; }
@@ -103,20 +106,23 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 .legend .hh { background: var(--hh); margin-left: 8px; }
 
 /* Timeline and nav */
-.timeline { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
+
 .when { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .time { display: flex; align-items: center; gap: 12px; }
 #play { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 1px solid var(--line);
   background: var(--chip); color: var(--ink); font-size: 13px; cursor: pointer; }
 #slider { flex: 1; accent-color: var(--loss); height: 28px; }
-.nav { display: flex; gap: 8px; position: sticky; bottom: -16px; margin: 0 -22px -16px; padding: 10px 22px 16px;
-  background: linear-gradient(transparent, var(--panel) 25%); z-index: 2; }
+
+/* Timeline and nav share a dock pinned to the bottom of the panel, so neither is ever scrolled away. */
+.limits { margin: auto 0 0; font-size: 11px; color: var(--muted); }
+.dock { position: sticky; bottom: -16px; margin: auto -22px -16px; padding: 12px 22px 16px; display: grid; gap: 10px;
+  background: #0f1412; border-top: 1px solid var(--line); z-index: 2; }
+.nav { display: flex; gap: 8px; }
 .nav button { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--chip);
   color: var(--ink); cursor: pointer; font-weight: 600; }
 .nav button.primary { flex: 2; background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .nav button:disabled { opacity: 0.35; cursor: default; }
-.limits { margin: 0; font-size: 11px; color: var(--muted); order: 9; }
-.nav { order: 10; }
+
 
 /* City readings on the smoke map */
 .city { white-space: nowrap; font: 600 12px/1.2 system-ui, sans-serif; color: #fff; background: rgba(13, 17, 16, 0.85);
@@ -131,13 +137,65 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 @media (max-width: 700px) {
   #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 56vh;
     border-radius: 16px 16px 0 0; padding: 14px 16px 12px; gap: 12px; }
-  .brand h1, .kicker { display: none; }
+
   .dots { margin-top: 0; }
   h2 { font-size: 22px; }
   .chbody { font-size: 14px; margin-bottom: 10px; }
   .big { font-size: 40px; }
-  .nav { bottom: -12px; margin: 0 -16px -12px; padding: 8px 16px 12px; }
+
   .limits { display: none; }
   .city { font-size: 10px; padding: 2px 5px; }
 }
 #panel { scrollbar-width: thin; scrollbar-color: #34403a transparent; }
+
+/* Review fixes */
+.key.peat { background: rgba(120, 72, 40, 0.75); }
+.key.peatburn { background: #6e1a12; }
+.layers .hint .key { margin-left: 6px; }
+.bars.two { grid-template-columns: 1fr 1fr; gap: 10px; }
+.bars.two .bar { margin-top: 0; }
+.key.fire { background: #ffe23c; }
+.key.firefaint { background: rgba(255, 110, 20, 0.7); }
+.leaflet-fires-pane.glow { filter: drop-shadow(0 0 1.5px #ffd23c) drop-shadow(0 0 3px rgba(255, 210, 60, 0.7)); }
+.fadetop { -webkit-mask-image: linear-gradient(to bottom, transparent 1%, #000 5%); mask-image: linear-gradient(to bottom, transparent 1%, #000 5%); }
+.headline { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.headline .big { color: var(--fire); }
+.headline span:last-child { color: #c9d3cd; font-size: 15px; line-height: 1.3; }
+.confirm { margin: 12px 0 0; font-size: 13px; color: #c9d3cd; }
+.confirm b { color: var(--ink); }
+input[type="checkbox"]:disabled + * , label:has(input:disabled) { opacity: 0.45; }
+/* Region layers (smoke, regional basemap) fade out at their edges instead of ending in a hard rectangle. */
+.feather { -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
+  linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
+  linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent); mask-composite: intersect; }
+@media (max-width: 700px) {
+  .brand .kicker { display: none; }
+  .brand h1 { font-size: 15px; margin-bottom: 8px; }
+  .dock { bottom: -12px; margin: 0 -16px -12px; padding: 8px 16px 12px; gap: 6px; }
+  .limits { display: none; }
+}
+#chart .zero { stroke: #55615a; stroke-dasharray: 2 3; }
+
+@media (max-width: 700px) { .big { font-size: 34px; } .widget small { font-size: 12px; } .probenote { font-size: 13px; } }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+.seg button { background: var(--chip); color: var(--muted); border: 0; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button.on { background: var(--ink); color: var(--bg); font-weight: 600; }
+.cobar { height: 10px; border-radius: 3px; background: linear-gradient(90deg, rgba(215,175,255,0.1), rgba(215,175,255,0.6) 25%, rgb(200,70,225) 55%, rgb(120,20,165)); }
+/* Laptop screens around 800 px tall: tighten the story so chapter 4's chart clears the dock. */
+@media (min-width: 701px) and (max-height: 880px) {
+  .brand .kicker { display: none; }
+  h2 { font-size: 26px; margin-bottom: 8px; }
+  .chbody { font-size: 15px; margin-bottom: 12px; }
+  .big { font-size: 46px; }
+  .probe { padding-top: 10px; }
+  .carline { display: none; }
+  #panel { gap: 14px; }
+}
+@media (max-width: 700px) {
+  .cityline { display: none; }        /* the chips on the map carry the same numbers */
+  .city-Banjarmasin { transform: translate(-50%, 40%); }
+}
+.cv { white-space: nowrap; }
+/* Tall screens (the 1920x1080 video): the panel hugs its content instead of leaving a dark gap above the dock. */
+@media (min-width: 701px) and (min-height: 900px) { #panel { bottom: auto; max-height: calc(100vh - 32px); } }

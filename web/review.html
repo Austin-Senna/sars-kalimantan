@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Burn Hand-Check</title>
+  <style>
+    :root { --bg: #0d1110; --card: #151b18; --ink: #eef2ee; --muted: #9aa8a0; --line: #26302b; --loss: #ff5a28; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Inter", system-ui, sans-serif; }
+    header { padding: 24px 16px 8px; max-width: 1200px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 26px; }
+    p { margin: 0 0 8px; color: var(--muted); max-width: 760px; }
+    .bar { position: sticky; top: 0; z-index: 2; background: rgba(13,17,16,0.95); border-bottom: 1px solid var(--line);
+      padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .bar .tally { margin-right: auto; font-variant-numeric: tabular-nums; }
+    button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
+      color: var(--ink); padding: 7px 12px; }
+    main { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; padding: 16px;
+      max-width: 1200px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+    .card h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; color: var(--muted); }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    figure { margin: 0; position: relative; }
+    figure img { width: 100%; display: block; border-radius: 6px; aspect-ratio: 1; image-rendering: auto; background: #000; }
+    figure img.mask { position: absolute; inset: 0; image-rendering: pixelated; background: transparent; }
+    figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .hide-mask img.mask { display: none; }
+    .labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+    .labels button { padding: 6px 4px; font-size: 13px; }
+    .locked .labels button { cursor: default; opacity: 0.6; }
+    .locked .labels button.on { opacity: 1; }
+    .labels button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+    .truth { margin-top: 8px; font-size: 13px; color: var(--muted); display: none; }
+    .reveal .truth { display: block; }
+    .where { display: none; }
+    .reveal .where { display: inline; }
+    .truth b { color: var(--ink); }
+    a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Burn hand-check</h1>
+    <p>A random sample of 24 radar burns (each 0.8 km² or more, drawn with a fixed seed; size and place stay hidden until you reveal). Left: June to July, right: October to early November, both
+      cloud-free photos from NASA's Landsat and Sentinel-2 satellites. The red outline is what the radar flagged. Label what you see
+      inside the outline, before revealing what the fire and optical checks said. Black is where no clear view exists.</p>
+    <p>Labels save in this browser. "Copy results" puts a summary on the clipboard to paste into the team chat.</p>
+  </header>
+  <div class="bar">
+    <span class="tally" id="tally"></span>
+    <button id="toggleMask" type="button">Hide outlines</button>
+    <button id="reveal" type="button">Reveal checks</button>
+    <button id="copy" type="button">Copy results</button>
+  </div>
+  <main id="grid"></main>
+
+  <script>
+    (async function () {
+      const LABELS = [["burned", "Burned"], ["cleared", "Cleared"], ["none", "No change"], ["unclear", "Can't tell"]];
+      const KEY = "burn-review-v1";
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { saved = {}; }
+      let revealed = false;
+      try { revealed = localStorage.getItem(KEY + "-revealed") === "1"; } catch (e) { revealed = false; }
+      const store = () => { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* labels stay in memory */ } };
+      const data = await (await fetch("review/review.json", { cache: "no-cache" })).json();
+      const grid = document.getElementById("grid");
+      const pad = (n) => String(n).padStart(2, "0");
+      grid.innerHTML = data.items.map((it) => `
+        <article class="card" data-id="${it.id}">
+          <h2><span>#${it.id + 1}<span class="where"> · ${it.km2} km²</span></span><a class="where" href="https://www.google.com/maps/@${it.lat},${it.lon},13z" target="_blank" rel="noopener">${it.lat}°, ${it.lon}°</a></h2>
+          <div class="pair">
+            <figure><img src="review/${pad(it.id)}_before.jpg" alt="Before"><img class="mask" src="review/${pad(it.id)}_mask.png" alt=""><figcaption>Jun to Jul</figcaption></figure>
+            <figure><img src="review/${pad(it.id)}_after.jpg" alt="After"><img class="mask" src="review/${pad(it.id)}_mask.png" alt=""><figcaption>Oct to early Nov</figcaption></figure>
+          </div>
+          <div class="labels">${LABELS.map(([k, t]) => `<button type="button" data-label="${k}">${t}</button>`).join("")}</div>
+          <div class="truth">Fire match: <b>${Math.round(it.fire * 100)}%</b> of the burn · Optical change map, new damage: <b>${Math.round(it.optical * 100)}%</b></div>
+        </article>`).join("");
+
+      if (revealed) { document.body.classList.add("reveal"); document.getElementById("reveal").textContent = "Hide checks"; }
+      function paint() {
+        document.body.classList.toggle("locked", revealed);
+        grid.querySelectorAll(".card").forEach((card) => {
+          card.querySelectorAll("[data-label]").forEach((b) => b.classList.toggle("on", saved[card.dataset.id] === b.dataset.label));
+        });
+        const n = data.items.length, done = Object.keys(saved).length;
+        const count = (k) => Object.values(saved).filter((v) => v === k).length;
+        document.getElementById("tally").textContent = (revealed ? "Checks revealed, labels locked. " : "") +
+          `${done} of ${n} labelled · burned ${count("burned")} · cleared ${count("cleared")} · no change ${count("none")} · can't tell ${count("unclear")}`;
+      }
+      grid.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-label]");
+        if (!b || revealed) return;  // labels lock for good once the checks have been revealed
+        const id = b.closest(".card").dataset.id;
+        saved[id] = saved[id] === b.dataset.label ? undefined : b.dataset.label;
+        if (!saved[id]) delete saved[id];
+        store(); paint();
+      });
+      document.getElementById("toggleMask").addEventListener("click", (e) => {
+        const off = document.body.classList.toggle("hide-mask");
+        e.target.textContent = off ? "Show outlines" : "Hide outlines";
+      });
+      document.getElementById("reveal").addEventListener("click", (e) => {
+        const on = document.body.classList.toggle("reveal");
+        if (on && !revealed) { revealed = true; try { localStorage.setItem(KEY + "-revealed", "1"); } catch (err) { /* stays locked this visit */ } }
+        paint();
+        e.target.textContent = on ? "Hide checks" : "Reveal checks";
+      });
+      document.getElementById("copy").addEventListener("click", async (e) => {
+        const rows = data.items.map((it) => `#${it.id + 1}\t${it.lat},${it.lon}\t${it.km2} km2\t${saved[it.id] || "-"}\tfire ${Math.round(it.fire * 100)}%\toptical ${Math.round(it.optical * 100)}%`);
+        const text = document.getElementById("tally").textContent + "\n" + rows.join("\n");
+        try { await navigator.clipboard.writeText(text); e.target.textContent = "Copied"; }
+        catch (err) { e.target.textContent = "Copy failed"; }
+        setTimeout(() => { e.target.textContent = "Copy results"; }, 1500);
+      });
+      paint();
+    })();
+  </script>
+</body>
+</html>

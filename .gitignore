@@ -105,3 +105,6 @@ pipeline/data/work/
 
 # Playwright MCP screenshots and logs
 .playwright-mcp/
+pipeline/data/inventory.json
+SUBMISSION.md
+demo/
