@@ -101,7 +101,7 @@ def agreement(points: list[list]) -> tuple[float, float]:
     return float(near[lost].mean()), float(near[forest].mean())
 
 
-def timed_agreement(points: list[list]) -> dict:
+def timed_agreement(points: list[list], match_km: float = MATCH_KM, lag_steps: int = LAG_STEPS, save: bool = True) -> dict:
     """Does a fire land where and when the canopy went? Compared with chance in the same place and season.
 
     For each lost pixel (the final loss map), its onset is the first 12-day step it crossed the loss threshold.
@@ -134,9 +134,9 @@ def timed_agreement(points: list[list]) -> dict:
             fire[s, r, c] = True
     for s in range(n_steps):
         if fire[s].any():
-            near[s] = distance_transform_edt(~fire[s]) * mosaic.RES * 111.32 <= MATCH_KM
+            near[s] = distance_transform_edt(~fire[s]) * mosaic.RES * 111.32 <= match_km
     window = near.copy()
-    for k in range(1, LAG_STEPS + 1):
+    for k in range(1, lag_steps + 1):
         window[k:] |= near[:-k]
 
     def matched(rr: np.ndarray, cc: np.ndarray, on: np.ndarray) -> np.ndarray:
@@ -144,6 +144,10 @@ def timed_agreement(points: list[list]) -> dict:
 
     rr, cc = np.nonzero(lost)
     hit = matched(rr, cc, onset[rr, cc])
+    hit_map = np.zeros(shape, bool)
+    hit_map[rr, cc] = hit
+    if save:
+        np.savez_compressed(mosaic.WORK / "fire_match.npz", lost=lost, hit=hit_map)  # optical.py combines with this
 
     # Chance, place by place: control pixels borrow onsets from the real burns in their cell.
     rng = np.random.default_rng(0)
@@ -170,10 +174,30 @@ def timed_agreement(points: list[list]) -> dict:
     hit_by_label = np.bincount(labels[rr, cc], weights=hit, minlength=n + 1) > 0
     big = np.nonzero(sizes[1:] >= 10)[0] + 1
     burns = float(hit_by_label[big].mean()) if len(big) else float("nan")
-    out = {"match_km": MATCH_KM, "window_days": (LAG_STEPS + 1) * mosaic.STEP_DAYS,
+    out = {"match_km": match_km, "window_days": (lag_steps + 1) * mosaic.STEP_DAYS,
            "loss_matched": round(float(hit.mean()), 3), "chance_matched": round(float(chance.mean()), 3),
            "burns_matched": round(burns, 3), "burns": int(len(big))}
     print(out)
+    return out
+
+
+def near_loss(points: list[list]) -> list[list]:
+    """Append the onset step of the nearest radar burn within MATCH_KM (or -1), so the map can light a fire dot up
+    only once the burn it matches has appeared."""
+    cached = np.load(mosaic.WORK / "mosaic.npz")
+    score = cached["score"]
+    land = mosaic.borneo_mask(score.shape[1:])
+    final = land & (np.nan_to_num(score[-1].astype(np.float32), nan=-99) > mosaic.LOSS_MIN)
+    onset = np.full(final.shape, -1, np.int8)
+    for s in range(score.shape[0]):
+        onset[(onset < 0) & final & (np.nan_to_num(score[s].astype(np.float32), nan=-99) > mosaic.LOSS_MIN)] = s
+    dist, (ir, ic) = distance_transform_edt(~final, return_indices=True)
+    near = dist * mosaic.RES * 111.32 <= MATCH_KM
+    out = []
+    for lat, lon, d in points:
+        r, c = int((mosaic.NORTH - lat) / mosaic.RES), int((lon - mosaic.WEST) / mosaic.RES)
+        ok = 0 <= r < near.shape[0] and 0 <= c < near.shape[1] and near[r, c]
+        out.append([lat, lon, d, int(onset[ir[r, c], ic[r, c]]) if ok else -1])
     return out
 
 
@@ -195,7 +219,7 @@ def main() -> None:
     timed = timed_agreement(points)
     out = {
         "timed": timed,
-        "points": thin(points),
+        "points": near_loss(thin(points)),
         "detections": len(points),
         "near_km": NEAR_KM,
         "loss_near": round(in_loss, 3),
@@ -207,5 +231,22 @@ def main() -> None:
     print(out["agreement"], f"{len(points)} detections")
 
 
+def sweep() -> None:
+    """Does the result depend on the chosen radius and window? Rerun the timed test over a grid of both."""
+    points = json.loads(CACHE.read_text())
+    rows = []
+    for km in (0.5, 1.0, 2.0):
+        for lag in (1, 2, 3):
+            r = timed_agreement(points, km, lag, save=False)
+            rows.append({k: r[k] for k in ("match_km", "window_days", "loss_matched", "chance_matched", "burns_matched")}
+                        | {"ratio": round(r["loss_matched"] / r["chance_matched"], 1)})
+    (mosaic.WEB / "fire_sweep.json").write_text(json.dumps(rows, indent=1))
+    print("km  days  loss  chance  ratio  burns")
+    for r in rows:
+        print(f"{r['match_km']:<3} {r['window_days']:<5} {r['loss_matched']:.0%}  {r['chance_matched']:.0%}   "
+              f"{r['ratio']:<5}  {r['burns_matched']:.0%}")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    sweep() if sys.argv[1:] == ["--sweep"] else main()

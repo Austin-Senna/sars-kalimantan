@@ -4,6 +4,8 @@
   const meta = await (await fetch("data/steps.json", { cache: "no-cache" })).json();
   let fireData = null;
   try { fireData = await (await fetch("data/firms.json", { cache: "no-cache" })).json(); } catch (e) { /* fires chapter shows no dots */ }
+  let optical = null;
+  try { optical = await (await fetch("data/optical.json", { cache: "no-cache" })).json(); } catch (e) { /* no optical line */ }
   const steps = meta.steps;
   const last = steps.length - 1;
   const bounds = L.latLngBounds(meta.bounds);
@@ -26,14 +28,14 @@
   pane("smoke", 430); pane("probe", 600);
   const pad = (n) => String(n).padStart(2, "0");
 
-  L.imageOverlay(meta.smoke ? "data/basemap_region.jpg" : "data/basemap.jpg", meta.smoke ? region : bounds, { opacity: 0.5 }).addTo(map);
+  L.imageOverlay(meta.smoke ? "data/basemap_region.jpg" : "data/basemap.jpg", meta.smoke ? region : bounds, { opacity: 0.5, className: "feather" }).addTo(map);
   L.imageOverlay("data/base_hv.png", bounds, { pane: "radar", className: "pixelated" }).addTo(map);
-  L.imageOverlay("data/peat.png", bounds, { pane: "peat", className: "pixelated" }).addTo(map);
+  L.imageOverlay("data/peat.png", bounds, { pane: "peat" }).addTo(map);  // smoothed: the peat map's 9 km cells read as blocks otherwise
   // One overlay per step for each time layer, all preloaded; only the current step is visible.
-  const perStep = (prefix, b, p) => steps.map((s) => L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p }).addTo(map));
+  const perStep = (prefix, b, p, cls) => steps.map((s) => L.imageOverlay(`data/${prefix}_${pad(s.step)}.png`, b, { opacity: 0, pane: p, className: cls }).addTo(map));
   const loss = perStep("loss", bounds, "loss");
   const peatburn = perStep("peatburn", bounds, "peatburn");
-  const smoke = meta.smoke ? perStep("smoke", region, "smoke") : [];
+  const smoke = meta.smoke ? perStep("smoke", region, "smoke", "feather") : [];
   const fireRenderer = L.canvas({ pane: "fires" });
   const fires = L.layerGroup().addTo(map);
   const cities = L.layerGroup().addTo(map);
@@ -54,7 +56,7 @@
     show(map.getPane("smoke"), view.smoke);
     show(map.getPane("radar"), !view.smoke, 0.92);
     show(map.getPane("loss"), !view.smoke);
-    show(map.getPane("fires"), view.fires && !view.smoke, 0.38);
+    show(map.getPane("fires"), view.fires && !view.smoke, 1);
     show(map.getPane("peat"), view.peat && !view.smoke);
     show(map.getPane("peatburn"), view.peat && !view.smoke);
     loss.forEach((o, j) => o.setOpacity(j === current ? 1 : 0));
@@ -63,11 +65,13 @@
     view.smoke ? cities.addTo(map) : cities.remove();
     for (const { name, c, m } of cityMarkers) {
       const v = c.aod[current];
-      const level = v == null ? "none" : v >= 1 ? "thick" : v >= 0.3 ? "hazy" : "clear";
+      const level = v == null ? "none" : v >= 2 ? "thick" : v >= 0.3 ? "hazy" : "clear";  // matches the scale bar
       m.setIcon(L.divIcon({ className: `city ${level}`, iconSize: null, html: `<b>${name}</b> ${v == null ? "no reading" : v.toFixed(1)}` }));
     }
     drawFires();
     $("tPeat").checked = view.peat; $("tFires").checked = view.fires; $("tSmoke").checked = view.smoke;
+    $("tPeat").disabled = $("tFires").disabled = view.smoke;  // hidden under the smoke anyway
+    $("smokeHides").hidden = !view.smoke;
   }
 
   function drawFires() {
@@ -79,27 +83,32 @@
     // Only fires from this step and the two before it (36 days): the dots follow the fire front instead of piling up.
     const end = steps[current].end, start = steps[Math.max(0, current - 2)].start;
     const radius = map.getZoom() >= 8 ? 2.2 : 1.3;  // bigger dots once zoomed in to a region
-    for (const [lat, lon, d] of fireData.points) {
-      if (d >= start && d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius, stroke: false, fillColor: "#ffd23f", fillOpacity: 1, interactive: false, renderer: fireRenderer, pane: "fires" }));
+    // Fires within 1 km of a radar burn are bright; the rest stay faint, so the map shows the overlap, not just fire everywhere.
+    for (const [lat, lon, d, onset] of fireData.points) {
+      const hit = onset >= 0 && onset <= current;
+      if (d >= start && d <= end) fires.addLayer(L.circleMarker([lat, lon], { radius: hit ? radius + 0.6 : radius * 0.8, stroke: false,
+        fillColor: hit ? "#ffe14d" : "#d8c46a", fillOpacity: hit ? 1 : 0.22, interactive: false, renderer: fireRenderer, pane: "fires" }));
     }
   }
 
   // --- Time.
   const slider = $("slider");
   slider.max = last;
-  const fmtDate = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+  const fmtDate = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const fmtNum = (n) => Math.round(n).toLocaleString("en-US");
   const fmtMt = (v) => v.toFixed(v < 10 ? 1 : 0);
   function setStep(i) {
     current = i;
     const s = steps[i];
     slider.value = i;
-    $("date").textContent = `${fmtDate(s.start)} to ${fmtDate(s.end)}`;
+    const sm = s.start.slice(5, 7) === s.end.slice(5, 7);
+    $("date").textContent = sm ? `${fmtDate(s.start)}–${Number(s.end.slice(8))}, 2026` : `${fmtDate(s.start)} – ${fmtDate(s.end)}, 2026`;
     const live = {
       km2: fmtNum(s.km2),
       co2: s.co2_mt != null ? fmtMt(s.co2_mt) : "–",
-      co2range: s.co2_mt ? `IPCC range ${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)} Mt` : "",
-      cars: s.cars_m >= 0.05 ? `about what ${s.cars_m.toFixed(1)} million cars give off in a year` : "",
+      co2range: s.co2_mt ? `range ${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)} Mt, from the IPCC uncertainty in how much peat burns` : "",
+      co2short: s.co2_mt ? `${fmtMt(s.co2_lo)} to ${fmtMt(s.co2_hi)}` : "",
+      cars: s.cars_m >= 0.05 ? `like ${s.cars_m.toFixed(1)} million cars for a year` : "",
       cities: cityMarkers.filter((x) => x.c.aod[i] != null).sort((a, b) => b.c.aod[i] - a.c.aod[i]).slice(0, 3)
         .map((x) => `${x.name} <b>${x.c.aod[i].toFixed(1)}</b>`).join(" · ") || "no readings this step",
     };
@@ -108,8 +117,10 @@
     drawChart();
   }
   let timer = null;
+  let pending = null;  // a delayed start: cancelled by a chapter change, the slider or play
+  function later(fn, ms) { pending = setTimeout(() => { pending = null; fn(); }, ms); }
   const play = $("play");
-  function stop() { clearInterval(timer); timer = null; play.textContent = "▶"; play.setAttribute("aria-label", "Play"); }
+  function stop() { clearTimeout(pending); pending = null; clearInterval(timer); timer = null; play.textContent = "▶"; play.setAttribute("aria-label", "Play"); }
   function animate(from, to, ms) {
     stop();
     setStep(from);
@@ -119,6 +130,7 @@
   }
   play.addEventListener("click", () => (timer ? stop() : animate(current === last ? 0 : current, last, 800)));
   slider.addEventListener("input", () => { stop(); setStep(+slider.value); });
+  slider.addEventListener("change", () => slider.blur());  // arrow keys go back to stepping chapters
 
   // --- Camera.
   const panelPad = () => (narrow()
@@ -128,7 +140,7 @@
 
   // --- Probe chart.
   let probeAt = null;
-  const probe = { hv: [], hh: [], w: 0, h: 0, ready: false };
+  const probe = { hv: [], hh: [], forest: null, loss: null, w: 0, h: 0, ready: false };
   (async () => {
     const load = (src) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src; });
     const read = (im) => {
@@ -141,59 +153,104 @@
         const [hv, hh] = await Promise.all([load(`data/probe_hv_${pad(s.step)}.png`), load(`data/probe_hh_${pad(s.step)}.png`)]);
         probe.hv.push(read(hv)); probe.hh.push(read(hh)); probe.w = hv.width; probe.h = hv.height;
       }
+      probe.forest = read(await load("data/probe_forest.png"));
+      probe.loss = read(await load("data/probe_loss.png"));
       probe.ready = true;
     } catch (e) { /* no probe layers: clicks do nothing */ }
   })();
   function sampleAt(latlng) {
     const x = Math.floor((latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest()) * probe.w);
     const y = Math.floor((bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth()) * probe.h);
-    if (x < 0 || y < 0 || x >= probe.w || y >= probe.h) return null;
+    if (x < 0 || y < 0 || x >= probe.w || y >= probe.h) return { none: true, outside: true };
     const k = (y * probe.w + x) * 4;
+    if (!probe.forest[k]) return { none: true };  // sea, towns, farms: no tree cover to follow
     const mid = (s) => new Date(Date.parse(s.start) + 6 * 864e5).toISOString().slice(0, 10);
     const v = (arr) => arr.map((d, i) => (d[k + 3] ? [mid(steps[i]), d[k]] : null)).filter(Boolean);
-    return { hv: v(probe.hv), hh: v(probe.hh) };
+    const reach = map.getZoom() < 8 ? 1 : 0;
+    let flagged = false;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+      const yy = y + dy, xx = x + dx;
+      if (yy >= 0 && xx >= 0 && yy < probe.h && xx < probe.w && probe.loss[(yy * probe.w + xx) * 4] > 0) flagged = true;
+    }
+    return { hv: v(probe.hv), hh: v(probe.hh), flagged };
   }
-  function openProbe(latlng, title, series) {
+  function openProbe(latlng, title, series, quiet) {
     const s = series || (probe.ready ? sampleAt(latlng) : null);
+    if (s && s.none) {
+      marker.remove(); probeAt = null;
+      $("probe").hidden = false;
+      $("probeTitle").textContent = s.outside ? "Outside the radar map" : "No tree cover here";
+      $("chart").innerHTML = ""; $("probeNote").textContent = "Click green tree cover or a red burn to see its radar history.";
+      showProbe();
+      return;
+    }
     if (!s || !s.hv.length) return;
     probeAt = s;
     marker.setLatLng(latlng).addTo(map);
-    $("probeTitle").textContent = title || `${latlng.lat.toFixed(2)}°, ${latlng.lng.toFixed(2)}°`;
-    $("probe").hidden = false;
+    const ns = (v, p, m) => `${Math.abs(v).toFixed(1)}° ${v >= 0 ? p : m}`;
+    $("probeTitle").textContent = title || `This spot (${ns(latlng.lat, "N", "S")}, ${ns(latlng.lng, "E", "W")})`;
     drawChart();
+    if (quiet) $("probe").hidden = false; else showProbe();  // in a story chapter, keep the chapter's headline on screen
+  }
+  // Bring the chart fully into view above the sticky dock, at every width.
+  function showProbe() {
+    const el = $("probe");
+    el.hidden = false;
+    el.style.scrollMarginBottom = `${document.querySelector(".dock").offsetHeight + 12}px`;
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "end" }));
   }
   function closeProbe() { $("probe").hidden = true; marker.remove(); probeAt = null; }
-  map.on("click", (e) => openProbe(e.latlng));
+  map.on("click", (e) => {
+    if (!view.smoke) { openProbe(e.latlng); return; }
+    marker.remove(); probeAt = null; $("chart").innerHTML = "";
+    $("probeTitle").textContent = "Radar hidden under smoke"; $("probeNote").textContent = "Turn smoke off to see a spot's radar history.";
+    showProbe();
+  });
   $("probeClose").addEventListener("click", closeProbe);
   function drawChart() {
     if (!probeAt) return;
     const svg = $("chart");
-    const W = 300, H = 130, l = 26, r = 6, t = 8, b = 22;
+    const W = 300, H = 130, l = 30, r = 6, t = 8, b = 22;
     const t0 = Date.parse(steps[0].start), t1 = Date.parse(steps[last].end);
     const xs = (d) => l + ((Date.parse(d) - t0) / (t1 - t0)) * (W - l - r);
-    // The y axis zooms to the data so a real drop is visible; it is relative brightness, not zero-based.
-    const vals = [...probeAt.hv, ...probeAt.hh].map((p) => p[1]);
-    const padY = Math.max(8, (Math.max(...vals) - Math.min(...vals)) * 0.15);
-    const lo = Math.max(0, Math.min(...vals) - padY), hi = Math.min(255, Math.max(...vals) + padY);
+    // Each line in % change from its own first (June) value. The axis spans at least -25% to +25% so ordinary
+    // noise stays small; 0% is marked.
+    const rel = (pts) => pts.map(([d, v]) => [d, (v - pts[0][1]) / pts[0][1] * 100]);
+    const hv = rel(probeAt.hv), hh = rel(probeAt.hh);
+    const vals = [...hv, ...hh].map((p) => p[1]);
+    const lo = Math.min(-25, Math.floor(Math.min(...vals) / 5) * 5 - 5), hi = Math.max(25, Math.ceil(Math.max(...vals) / 5) * 5 + 5);
     const ys = (v) => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
     const path = (pts) => pts.map(([d, v], i) => (i ? "L" : "M") + `${xs(d)},${ys(v)}`).join("");
     const dots = (pts, cls) => pts.map(([d, v]) => `<circle class="${cls}" cx="${xs(d)}" cy="${ys(v)}" r="2"/>`).join("");
     const months = steps.map((s) => s.start.slice(0, 7)).filter((m, i, a) => a.indexOf(m) === i);
+    const lastLook = probeAt.hv[probeAt.hv.length - 1][0];
+    const now = steps[current].end < lastLook ? steps[current].end : lastLook;  // never past the last radar look
+    const ticks = [hi, 0, lo];
     svg.innerHTML =
-      [hi, (hi + lo) / 2, lo].map((v) => `<line class="grid" x1="${l}" x2="${W - r}" y1="${ys(v)}" y2="${ys(v)}"/>`).join("") +
-      `<text x="2" y="${ys(hi) + 3}">brighter</text><text x="2" y="${ys(lo)}">darker</text>` +
+      ticks.map((v) => `<line class="${v === 0 ? "zero" : "grid"}" x1="${l}" x2="${W - r}" y1="${ys(v)}" y2="${ys(v)}"/>` +
+        `<text x="${l - 3}" y="${ys(v) + 3}" text-anchor="end">${v > 0 ? "+" : ""}${v}%</text>`).join("") +
       months.slice(1).map((m) => `<text x="${xs(m + "-01")}" y="${H - 6}" text-anchor="middle">${new Date(m + "-15T00:00:00Z").toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</text>`).join("") +
-      `<line class="now" x1="${xs(steps[current].end)}" x2="${xs(steps[current].end)}" y1="${t}" y2="${H - b}"/>` +
-      `<path class="hh" d="${path(probeAt.hh)}"/><path class="hv" d="${path(probeAt.hv)}"/>` + dots(probeAt.hh, "hh") + dots(probeAt.hv, "hv");
-    const first = probeAt.hv[0][1], end = probeAt.hv[probeAt.hv.length - 1][1];
-    const pct = Math.round((end - first) / first * 100);
-    $("probeNote").textContent = pct <= -5
-      ? `Leaf echo (HV) is ${-pct}% below June by the last look.`
-      : `Leaf echo (HV) changed ${pct >= 0 ? "+" : ""}${pct}% since June: no clear canopy loss here.`;
+      `<line class="now" x1="${xs(now)}" x2="${xs(now)}" y1="${t}" y2="${H - b}"/>` +
+      `<text x="${W - r}" y="${t + 8}" text-anchor="end">change since June</text>` +
+      `<path class="hh" d="${path(hh)}"/><path class="hv" d="${path(hv)}"/>` + dots(hh, "hh") + dots(hv, "hv");
+    // The verdict follows the loss map, so the chart never contradicts the red; the % is context.
+    const upto = hv.filter(([d]) => d <= now);
+    const pct = Math.round((upto.length ? upto[upto.length - 1] : hv[0])[1]);
+    const flagged = probeAt.flagged !== false;  // Ketapang's series is a flagged burn
+    const sign = `${pct >= 0 ? "+" : ""}${pct}%`;
+    $("probeNote").textContent = flagged
+      ? `Radar flagged this spot as lost. Leaf echo ${sign} since June.`
+      : `Not flagged as lost. Leaf echo ${sign} since June` +
+        (pct >= 30 ? ": a rise like this is usually wet ground or radar noise." :
+         pct <= -10 ? ": a drop, but not deep or lasting enough to flag." : ", normal variation.");
   }
+  let arrive = null;  // the chart opening on arrival at Ketapang; cancelled when the chapter changes mid-flight
   const ketapangJump = () => {
-    map.flyTo(KETAPANG, narrow() ? 9.5 : 10, { duration: 1.4 });
-    map.once("moveend", () => openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series));
+    const [la, lo] = KETAPANG;
+    flyTo(L.latLngBounds([[la - 0.25, lo - 0.3], [la + 0.25, lo + 0.3]]), { duration: 1.4 });  // centred in the visible map
+    if (arrive) map.off("moveend", arrive);
+    arrive = () => { arrive = null; openProbe(L.latLng(KETAPANG), "Ketapang peat dome", meta.ketapang_series, chapter < EXPLORE); };
+    map.once("moveend", arrive);
   };
 
   // --- Chapters.
@@ -202,48 +259,53 @@
   const chance = timed ? Math.round(timed.chance_matched * 100) : null;
   const burns = timed ? Math.round(timed.burns_matched * 100) : null;
   const lastStep = steps[last];
-  const keys = `<p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>radar echo collapsed</span><span><i class="key grey"></i>no tree cover</span></p>`;
+  const confirmed = optical && optical.loss_fire_or_optical != null ? Math.round(optical.loss_fire_or_optical * 10) : null;
+  const peatShare = lastStep.peat_km2 ? Math.round(lastStep.km2 / lastStep.peat_km2) : null;
+  const keys = `<p class="keys"><span><i class="key green"></i>tree cover in June</span><span><i class="key red"></i>lost (radar)</span><span><i class="key grey"></i>no tree cover</span></p>`;
+  const optPct = optical ? Math.round(optical.loss_confirmed * 100) : null;
+  const optChance = optical ? Math.round(optical.chance_confirmed * 100) : null;
   const chapters = [
     {
-      title: "Smoke hid Borneo's fire season",
-      body: "From August to October 2026, haze from burning forest and peat covered Borneo and drifted to Singapore and Kuala Lumpur. This is what ordinary satellites see.",
+      title: "Smoke hid the fire season",
+      body: "Aug to Oct 2026: haze from burning forest and peat covered Borneo and reached Singapore. This is what normal satellites saw.",
       widget: `<p class="cityline" data-live="cities"></p>
         <div class="aodbar"></div>
-        <div class="aodticks"><span style="left:0">0.3 clear</span><span style="left:26%">1 hazy</span><span style="left:63%">2</span><span style="right:0">3+ thick</span></div>
-        <p class="hint"><i class="key nodata"></i>No reading: cloud, or smoke too thick to measure. Numbers are aerosol optical depth, how much sunlight the haze blocks (NASA VIIRS).</p>`,
-      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(region); animate(0, 8, 450); },
+        <div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div>
+        <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p>`,
+      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(0, last - 1, 420); },
     },
     {
       title: "Radar sees through it",
-      body: "NISAR's L-band radar passes through smoke and cloud. Its HV channel echoes off leaves and branches, so when canopy burns, the echo collapses. Red is where it did, 12 days at a time.",
-      widget: `<div class="big loss" data-live="km2"></div><small>km² of tree cover lost since June</small>${keys}`,
-      enter() { Object.assign(view, { smoke: false, fires: false, peat: false }); stop(); current = 0; flyTo(FIRE_ZONE); later(() => animate(0, last, 650), 1200); },
+      body: "NISAR's radar passes through smoke. When the canopy burns, its echo collapses. Red is where it did.",
+      widget: `<div class="big loss" data-live="km2"></div><small>km² of tree cover lost since June</small>${keys}` +
+        (confirmed ? `<p class="confirm"><b>${confirmed} in 10</b> confirmed by other NASA satellites.</p>` : ""),
+      enter() { Object.assign(view, { smoke: false, fires: false, peat: false }); stop(); current = 0; flyTo(narrow() ? FIRE_ZONE.pad(0.12) : FIRE_ZONE); later(() => animate(0, last, 650), 1200); },
     },
     {
       title: "It lines up with fire",
-      body: "Yellow dots are NASA fire detections from the last 36 days, seen by heat sensors on two other satellites. " +
-        "A lost patch counts as matched when a fire lands within 1 km of it, in the weeks its canopy disappeared.",
+      body: "Yellow dots are NASA fire detections from the 36 days up to the slider date. Bright ones sit next to a radar burn.",
       widget: near == null ? "" : `
+        <div class="headline"><span class="big">${Math.round(near / chance)}×</span><span>more fire than chance</span></div>
         <div class="bars">
-          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss has a matching fire</small>
-          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of unburned tree cover nearby would, by chance</small>
-        </div>
-        <p class="hint">${Math.round(near / chance)}× chance. ${burns}% of the ${timed.burns} burns over 0.8 km² have a matching fire.</p>`,
-      // Zoomed into the southwest burns, playing from August: fires move through, red follows.
+          <div class="bar"><span style="width:${near}%"></span><b>${near}%</b></div><small>of radar loss had a fire within 1 km</small>
+          <div class="bar dim"><span style="width:${chance}%"></span><b>${chance}%</b></div><small>of unburned tree cover nearby (chance)</small>
+        </div>` +
+        (optical ? `<p class="second">Optical satellites agree: <b>${optPct}%</b> vs <b>${optChance}%</b> by chance.</p>` : ""),
       enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); current = 3; flyTo(PROOF_ZONE); later(() => animate(3, last, 900), 1300); },
     },
     {
-      title: "The burns released peat carbon",
-      body: "Much of it burned on peat, soil built from centuries of dead plants. Dark marks burns on peat. Ketapang's peat dome is the biggest burn in West Kalimantan" +
-        (meta.ketapang_km2 ? ` (${Math.round(meta.ketapang_km2)} km²)` : "") + ": its leaf echo fell steadily from August.",
-      widget: `<div class="big" data-live="co2"></div><small>Mt CO₂ from burning peat, <span data-live="cars"></span></small>
-        <p class="hint" data-live="co2range"></p>`,
+      title: "The cost: peat carbon",
+      body: (peatShare ? `1 in ${peatShare} lost km² was peat: centuries of stored carbon. ` : "") +
+        "Ketapang's peat dome is West Kalimantan's biggest burn.",
+      // Two honest ends: the floor counts only peat loss a second NASA source confirmed; the top counts all radar loss.
+      widget: (optical && optical.confirmed_co2_mt
+        ? `<div class="big">${Math.round(optical.confirmed_co2_mt[0])}–${Math.round(lastStep.co2_mt)}</div><small>million tonnes of CO₂: ${Math.round(optical.confirmed_co2_mt[0])} from peat loss confirmed by fire or optical satellites, ${Math.round(lastStep.co2_mt)} counting all radar loss. Like ${(optical.confirmed_co2_mt[0] / 4.6).toFixed(1)}–${lastStep.cars_m.toFixed(1)} million cars for a year.</small>`
+        : `<div class="big" data-live="co2"></div><small>million tonnes of CO₂ (estimate, <span data-live="co2short"></span>): <span data-live="cars"></span></small>`) + `
+        <p class="keys"><span><i class="key peat"></i>peat</span><span><i class="key peatburn"></i>burned peat</span><span><i class="key red"></i>other burns</span></p>`,
       enter() { Object.assign(view, { smoke: false, fires: false, peat: true }); stop(); setStep(last); ketapangJump(); },
     },
   ];
   const EXPLORE = chapters.length;
-  let pending = null;  // a delayed start that must not fire after the chapter changes
-  function later(fn, ms) { pending = setTimeout(() => { pending = null; fn(); }, ms); }
   let chapter = -1;
   const dots = $("dots");
   dots.innerHTML = [...chapters.map((c, i) => `<button type="button" data-ch="${i}" aria-label="Chapter ${i + 1}: ${c.title}">${i + 1}</button>`),
@@ -254,12 +316,14 @@
     n = Math.max(0, Math.min(EXPLORE, n));
     if (n === chapter) return;
     chapter = n;
-    clearTimeout(pending);
+    stop();
+    if (arrive) { map.off("moveend", arrive); arrive = null; }
     closeProbe();
     dots.querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.ch === n));
     const story = n < EXPLORE;
     $("chapter").hidden = !story;
     $("explore").hidden = story;
+    document.querySelector(".limits").hidden = story;
     $("prev").disabled = n === 0;
     $("next").textContent = n === EXPLORE - 1 ? "Explore the map →" : n === EXPLORE ? "Back to the start" : "Next →";
     if (story) {
@@ -281,16 +345,19 @@
   $("prev").addEventListener("click", () => go(chapter - 1));
   $("next").addEventListener("click", () => go(chapter === EXPLORE ? 0 : chapter + 1));
   document.addEventListener("keydown", (e) => {
-    if (e.target.matches("input, textarea")) return;
-    if (e.key === "ArrowRight" || e.key === "PageDown") go(chapter === EXPLORE ? EXPLORE : chapter + 1);
-    if (e.key === "ArrowLeft" || e.key === "PageUp") go(chapter - 1);
+    const fwd = e.key === "PageDown" || (e.key === "ArrowRight" && !e.target.matches("input[type=range]"));
+    const back = e.key === "PageUp" || (e.key === "ArrowLeft" && !e.target.matches("input[type=range]"));
+    if (!fwd && !back) return;
+    e.preventDefault();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    go(fwd ? chapter + 1 : chapter - 1);
   });
 
   // Explore controls.
   $("tPeat").addEventListener("change", (e) => { view.peat = e.target.checked; render(); });
   $("tFires").addEventListener("change", (e) => { view.fires = e.target.checked; render(); });
-  $("tSmoke").addEventListener("change", (e) => { view.smoke = e.target.checked; render(); flyTo(view.smoke ? region : bounds); });
-  document.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => { stop(); setStep(last); ketapangJump(); }));
+  $("tSmoke").addEventListener("change", (e) => { view.smoke = e.target.checked; render(); if (view.smoke) { closeProbe(); flyTo(region); } });
+  document.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => { stop(); Object.assign(view, { peat: true, smoke: false }); setStep(last); ketapangJump(); }));
 
   map.fitBounds(region, panelPad());
   glow();

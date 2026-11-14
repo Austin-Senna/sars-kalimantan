@@ -1,0 +1,74 @@
+[
+ {
+  "match_km": 0.5,
+  "window_days": 24,
+  "loss_matched": 0.205,
+  "chance_matched": 0.038,
+  "burns_matched": 0.53,
+  "ratio": 5.4
+ },
+ {
+  "match_km": 0.5,
+  "window_days": 36,
+  "loss_matched": 0.312,
+  "chance_matched": 0.052,
+  "burns_matched": 0.602,
+  "ratio": 6.0
+ },
+ {
+  "match_km": 0.5,
+  "window_days": 48,
+  "loss_matched": 0.395,
+  "chance_matched": 0.063,
+  "burns_matched": 0.625,
+  "ratio": 6.3
+ },
+ {
+  "match_km": 1.0,
+  "window_days": 24,
+  "loss_matched": 0.335,
+  "chance_matched": 0.079,
+  "burns_matched": 0.598,
+  "ratio": 4.2
+ },
+ {
+  "match_km": 1.0,
+  "window_days": 36,
+  "loss_matched": 0.437,
+  "chance_matched": 0.103,
+  "burns_matched": 0.652,
+  "ratio": 4.2
+ },
+ {
+  "match_km": 1.0,
+  "window_days": 48,
+  "loss_matched": 0.504,
+  "chance_matched": 0.124,
+  "burns_matched": 0.665,
+  "ratio": 4.1
+ },
+ {
+  "match_km": 2.0,
+  "window_days": 24,
+  "loss_matched": 0.506,
+  "chance_matched": 0.17,
+  "burns_matched": 0.725,
+  "ratio": 3.0
+ },
+ {
+  "match_km": 2.0,
+  "window_days": 36,
+  "loss_matched": 0.581,
+  "chance_matched": 0.212,
+  "burns_matched": 0.752,
+  "ratio": 2.7
+ },
+ {
+  "match_km": 2.0,
+  "window_days": 48,
+  "loss_matched": 0.623,
+  "chance_matched": 0.246,
+  "burns_matched": 0.77,
+  "ratio": 2.5
+ }
+]

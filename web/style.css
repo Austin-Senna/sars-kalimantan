@@ -71,6 +71,9 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 .bar.dim span { background: #4a524e; }
 .bar b { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 20px; }
 
+.second { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: #c9d3cd; }
+.second b { color: var(--ink); }
+
 /* Explore */
 .explore { display: grid; gap: 18px; }
 .explore[hidden] { display: none; }
@@ -103,20 +106,23 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 .legend .hh { background: var(--hh); margin-left: 8px; }
 
 /* Timeline and nav */
-.timeline { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
+
 .when { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .time { display: flex; align-items: center; gap: 12px; }
 #play { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 1px solid var(--line);
   background: var(--chip); color: var(--ink); font-size: 13px; cursor: pointer; }
 #slider { flex: 1; accent-color: var(--loss); height: 28px; }
-.nav { display: flex; gap: 8px; position: sticky; bottom: -16px; margin: 0 -22px -16px; padding: 10px 22px 16px;
-  background: linear-gradient(transparent, var(--panel) 25%); z-index: 2; }
+
+/* Timeline and nav share a dock pinned to the bottom of the panel, so neither is ever scrolled away. */
+.limits { margin: auto 0 0; font-size: 11px; color: var(--muted); }
+.dock { position: sticky; bottom: -16px; margin: 0 -22px -16px; padding: 12px 22px 16px; display: grid; gap: 10px;
+  background: #0f1412; border-top: 1px solid var(--line); z-index: 2; }
+.nav { display: flex; gap: 8px; }
 .nav button { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--chip);
   color: var(--ink); cursor: pointer; font-weight: 600; }
 .nav button.primary { flex: 2; background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .nav button:disabled { opacity: 0.35; cursor: default; }
-.limits { margin: 0; font-size: 11px; color: var(--muted); order: 9; }
-.nav { order: 10; }
+
 
 /* City readings on the smoke map */
 .city { white-space: nowrap; font: 600 12px/1.2 system-ui, sans-serif; color: #fff; background: rgba(13, 17, 16, 0.85);
@@ -131,13 +137,37 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 @media (max-width: 700px) {
   #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 56vh;
     border-radius: 16px 16px 0 0; padding: 14px 16px 12px; gap: 12px; }
-  .brand h1, .kicker { display: none; }
+
   .dots { margin-top: 0; }
   h2 { font-size: 22px; }
   .chbody { font-size: 14px; margin-bottom: 10px; }
   .big { font-size: 40px; }
-  .nav { bottom: -12px; margin: 0 -16px -12px; padding: 8px 16px 12px; }
+
   .limits { display: none; }
   .city { font-size: 10px; padding: 2px 5px; }
 }
 #panel { scrollbar-width: thin; scrollbar-color: #34403a transparent; }
+
+/* Review fixes */
+.key.peat { background: rgba(120, 72, 40, 0.75); }
+.key.peatburn { background: #6e1a12; }
+.layers .hint .key { margin-left: 6px; }
+.headline { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.headline .big { color: var(--fire); }
+.headline span:last-child { color: #c9d3cd; font-size: 15px; line-height: 1.3; }
+.confirm { margin: 12px 0 0; font-size: 13px; color: #c9d3cd; }
+.confirm b { color: var(--ink); }
+input[type="checkbox"]:disabled + * , label:has(input:disabled) { opacity: 0.45; }
+/* Region layers (smoke, regional basemap) fade out at their edges instead of ending in a hard rectangle. */
+.feather { -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
+  linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
+  linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent); mask-composite: intersect; }
+@media (max-width: 700px) {
+  .brand .kicker { display: none; }
+  .brand h1 { font-size: 15px; margin-bottom: 8px; }
+  .dock { bottom: -12px; margin: 0 -16px -12px; padding: 8px 16px 12px; gap: 6px; }
+  .limits { display: none; }
+}
+#chart .zero { stroke: #55615a; stroke-dasharray: 2 3; }
+#chart { max-height: 118px; }

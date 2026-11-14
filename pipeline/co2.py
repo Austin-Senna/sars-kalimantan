@@ -40,7 +40,10 @@ def write_peat(frac: np.ndarray, land: np.ndarray) -> None:
     from PIL import Image
     rgba = np.zeros((*frac.shape, 4), np.uint8)
     rgba[..., :3] = (120, 72, 40)
-    rgba[..., 3] = np.where(land, (frac * 170).clip(0, 170), 0).astype(np.uint8)
+    # Display only: blur the 1/12 degree cells (about 33 grid pixels) so they read as a soft field, not tiles.
+    from scipy.ndimage import gaussian_filter
+    soft = gaussian_filter(frac.astype(np.float32), 14)
+    rgba[..., 3] = np.where(land, (np.sqrt(soft) * 210).clip(0, 200), 0).astype(np.uint8)
     Image.fromarray(rgba).save(mosaic.WEB / "peat.png", optimize=True)
 
 
@@ -52,7 +55,7 @@ def write_burned_peat(s: int, lost: np.ndarray, frac: np.ndarray) -> None:
     shown = binary_dilation(on_peat)  # the same one-pixel halo as the loss layer, so they line up
     rgba = np.zeros((*lost.shape, 4), np.uint8)
     rgba[..., :3] = (38, 22, 14)
-    rgba[..., 3] = np.where(shown, (90 + frac * 165).clip(0, 255), 0).astype(np.uint8)
+    rgba[..., 3] = np.where(shown, 225, 0).astype(np.uint8)  # one tone: block edges in the peat map do not show
     Image.fromarray(rgba).save(mosaic.WEB / f"peatburn_{s:02d}.png", optimize=True)
 
 

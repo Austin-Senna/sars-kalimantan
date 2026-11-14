@@ -30,7 +30,8 @@ BASELINE_END = date(2026, 7, 23)  # looks before the Aug-Oct peat-fire season fo
 SMOOTH = 3  # grid pixels, boxcar
 FOREST_PCT = 40  # June HV above this percentile of the track-frame counts as canopy
 NOISE_K = 3.0  # a drop counts as loss above NOISE_K robust sigmas of the date-to-date noise
-LOSS_MIN = 1.0  # loss score threshold, in sigmas above the NOISE_K floor (score = drop / sigma - NOISE_K)
+LOSS_MIN = 1.0
+EDGE_ROWS = 70  # the top 0.175 degrees (4.225 to 4.4 N): the last partial frames there flag loss 5 to 20x the background rate  # loss score threshold, in sigmas above the NOISE_K floor (score = drop / sigma - NOISE_K)
 
 
 def grid(res: float = RES) -> tuple[np.ndarray, np.ndarray]:
@@ -182,6 +183,9 @@ def write() -> None:
     WEB.mkdir(parents=True, exist_ok=True)
     cached = np.load(WORK / "mosaic.npz")
     score, base = cached["score"].astype(np.float32), cached["base"]
+    if np.isfinite(score[:, :EDGE_ROWS]).any():  # mask the edge band once, in the cache, so every later script agrees
+        score[:, :EDGE_ROWS] = np.nan
+        np.savez(WORK / "mosaic.npz", score=score.astype(np.float16), base=base, forest=cached["forest"])
     land = borneo_mask(base.shape)
     glat = grid()[1]
     # Base: June forest in green, shaded by its radar brightness; everything else (farms, plantations, towns,
@@ -200,18 +204,26 @@ def write() -> None:
     alpha[:fade] *= np.linspace(0, 1, fade)[:, None]
     alpha = alpha.astype(np.uint8)
     Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha])).save(WEB / "base_hv.png", optimize=True)
-    rgba = np.zeros((*forest.shape, 4), np.uint8)
-    rgba[forest] = (126, 224, 190, 38)
-    Image.fromarray(rgba).save(WEB / "forest.png", optimize=True)
+    # Tree-cover mask at the click-chart resolution (0.01 degrees): the app only draws a chart where there was tree cover.
+    k = 4  # 0.0025 -> 0.01 degrees
+    h, w = (forest.shape[0] // k) * k, (forest.shape[1] // k) * k
+    share = forest[:h, :w].reshape(h // k, k, w // k, k).mean(axis=(1, 3))
+    Image.fromarray(np.where(share >= 0.5, 255, 0).astype(np.uint8)).save(WEB / "probe_forest.png", optimize=True)
+    # Same grid: was any pixel in the cell flagged as lost by the last step? The chart's verdict reads this, so it
+    # always agrees with the red on the map.
+    last = land & np.isfinite(score[-1]) & (score[-1] > LOSS_MIN)
+    flagged = last[:h, :w].reshape(h // k, k, w // k, k).any(axis=(1, 3))
+    Image.fromarray(np.where(flagged, 255, 0).astype(np.uint8)).save(WEB / "probe_loss.png", optimize=True)
     km2_px = (RES * 111.32) ** 2 * np.cos(np.radians(glat))
     steps = []
     for s in range(score.shape[0]):
         lost = land & np.isfinite(score[s]) & (score[s] > LOSS_MIN)
         t = np.nan_to_num(np.clip((score[s] - LOSS_MIN) / 4, 0, 1), nan=1)
         img = np.zeros((*lost.shape, 4), np.uint8)
-        img[..., 0] = 255
-        img[..., 1] = (190 * (1 - t)).astype(np.uint8)
-        img[..., 2] = 40
+        # Pure reds (deeper where the drop is stronger), no orange or yellow: those belong to the fire dots.
+        img[..., 0] = (255 - 50 * t).astype(np.uint8)
+        img[..., 1] = (60 * (1 - t)).astype(np.uint8)
+        img[..., 2] = (50 * (1 - t) + 20).astype(np.uint8)
         shown = binary_dilation(lost)  # one pixel of halo so small burns read at island zoom; km2 uses `lost`
         img[..., 3] = np.where(lost, 255, np.where(shown, 150, 0))
         Image.fromarray(img).save(WEB / f"loss_{s:02d}.png", optimize=True)

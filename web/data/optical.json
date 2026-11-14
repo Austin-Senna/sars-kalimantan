@@ -1,0 +1,23 @@
+{
+ "before": [
+  "2026-06-05",
+  "2026-07-10"
+ ],
+ "after": [
+  "2026-10-01",
+  "2026-11-06"
+ ],
+ "loss_confirmed": 0.413,
+ "chance_confirmed": 0.063,
+ "loss_seen": 0.903,
+ "loss_unseen_after": 0.0,
+ "loss_disturbed_in_june": 0.096,
+ "loss_fire_or_optical": 0.633,
+ "loss_fire_and_optical": 0.226,
+ "confirmed_peat_km2": 375.0,
+ "confirmed_co2_mt": [
+  22.5,
+  10.8,
+  34.2
+ ]
+}
