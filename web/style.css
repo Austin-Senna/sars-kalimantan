@@ -95,7 +95,7 @@ h2 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.015
 #chart text { fill: var(--muted); font-size: 9px; }
 #chart .grid { stroke: var(--line); }
 #chart path.hv { stroke: var(--hv); fill: none; stroke-width: 3; }
-#chart path.hh { stroke: #7f95c4; fill: none; stroke-width: 1.5; }
+#chart path.hh { stroke: var(--hh); fill: none; stroke-width: 1.5; }
 #chart circle.hv { fill: var(--hv); }
 #chart circle.hh { fill: var(--hh); }
 #chart .now { stroke: var(--loss); stroke-dasharray: 3 3; }
@@ -197,3 +197,5 @@ input[type="checkbox"]:disabled + * , label:has(input:disabled) { opacity: 0.45;
   .city-Banjarmasin { transform: translate(-50%, 40%); }
 }
 .cv { white-space: nowrap; }
+/* Tall screens (the 1920x1080 video): the panel hugs its content instead of leaving a dark gap above the dock. */
+@media (min-width: 701px) and (min-height: 900px) { #panel { bottom: auto; max-height: calc(100vh - 32px); } }
