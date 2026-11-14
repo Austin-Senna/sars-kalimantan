@@ -218,7 +218,7 @@
     const rel = (pts) => pts.map(([d, v]) => [d, (v - pts[0][1]) / pts[0][1] * 100]);
     const hv = rel(probeAt.hv), hh = rel(probeAt.hh);
     const vals = [...hv, ...hh].map((p) => p[1]);
-    const lo = Math.min(-25, Math.floor(Math.min(...vals) / 5) * 5 - 5), hi = Math.max(5, Math.ceil(Math.max(...vals) / 5) * 5 + 5);
+    const lo = Math.min(-25, Math.floor(Math.min(...vals) / 5) * 5 - 5), hi = Math.max(5, Math.ceil(Math.max(...vals) / 5) * 5);
     const ys = (v) => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
     const path = (pts) => pts.map(([d, v], i) => (i ? "L" : "M") + `${xs(d)},${ys(v)}`).join("");
     const dots = (pts, cls) => pts.map(([d, v]) => `<circle class="${cls}" cx="${xs(d)}" cy="${ys(v)}" r="2"/>`).join("");
@@ -269,7 +269,7 @@
     {
       title: "Smoke hid the fire season",
       body: `<span class="gas-aod">Aug to Oct 2026: haze from burning forest and peat covered Borneo and reached Singapore. This is what normal satellites saw.</span>` +
-        `<span class="gas-co" hidden>Fire gas: carbon monoxide from the burning, measured by NASA's AIRS even through haze. By late October it was 3.5 to 4 times its June level at every city.</span>`,
+        `<span class="gas-co" hidden>Fire gas: carbon monoxide from the burning, measured by NASA's AIRS even through haze. By late October it was about 4 times its June level at every city.</span>`,
       widget: (meta.co ? `<div class="seg"><button type="button" data-gas="aod">Haze</button><button type="button" data-gas="co">Fire gas (CO)</button></div>` : "") +
         `<p class="cityline" data-live="cities"></p>
         <div class="gas-co" hidden><div class="cobar"></div>
@@ -278,7 +278,7 @@
         <div class="gas-aod"><div class="aodbar"></div>
         <div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div>
         <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p></div>`,
-      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(0, last - 1, 420); },
+      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(4, last - 1, 420); },  // from late July: June is mostly cloud with no reading
     },
     {
       title: "Radar sees through it",
