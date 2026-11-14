@@ -236,15 +236,29 @@ def write_layers(points: list[list]) -> None:
         r, c = int((mosaic.NORTH - lat) / mosaic.RES), int((lon - mosaic.WEST) / mosaic.RES)
         if 0 <= s < n_steps and 0 <= r < shape[0] and 0 <= c < shape[1]:
             by_step[s, r, c] = True
+    from scipy.ndimage import gaussian_filter
     for s in range(n_steps):
         seen = by_step[max(0, s - LAG_STEPS):s + 1].any(axis=0)
         hit = seen & (near_onset <= s)
+        # Aggregate into soft clusters (density over about 1.5 km) so fire areas stay visible at island zoom,
+        # where a single 280 m pixel is smaller than a screen pixel.
+        dens = gaussian_filter(seen.astype(np.float32), 5)
+        a_all = np.clip(dens * 9, 0, 1)
+        dens_hit = gaussian_filter(binary_dilation(hit, iterations=2).astype(np.float32), 3)
+        a_hit = np.clip(dens_hit * 3, 0, 1)
         rgba = np.zeros((*shape, 4), np.uint8)
-        faint = seen & ~hit
-        rgba[faint] = (226, 204, 110, 120)
-        bright = binary_dilation(hit)  # a 3-pixel dot, about 750 m: readable next to the burns
-        rgba[bright] = (255, 226, 77, 255)
-        Image.fromarray(rgba).save(mosaic.WEB / f"fires_{s:02d}.png", optimize=True)
+        rgba[..., 0], rgba[..., 1], rgba[..., 2] = 255, 214, 70        # other fires: same yellow, see-through
+        rgba[..., 3] = (a_all * 105).astype(np.uint8)
+        top = a_hit > 0.05                                              # fires next to a radar burn: solid yellow on top
+        rgba[top, 0], rgba[top, 1], rgba[top, 2] = 255, 226, 60
+        rgba[top, 3] = np.maximum(rgba[top, 3], (a_hit[top] * 255).astype(np.uint8))
+        # Drop the near-invisible tails and round alpha to 16 levels: same look, a fraction of the file size.
+        a = rgba[..., 3]
+        a[a < 12] = 0
+        rgba[..., 3] = (a // 16) * 16
+        rgba[rgba[..., 3] == 0] = 0
+        # Half resolution (about 560 m): the layer is soft anyway.
+        Image.fromarray(rgba).resize((shape[1] // 2, shape[0] // 2), Image.NEAREST).save(mosaic.WEB / f"fires_{s:02d}.png", optimize=True)
 
 
 def main() -> None:
