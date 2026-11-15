@@ -10,8 +10,6 @@
   const last = steps.length - 1;
   const bounds = L.latLngBounds(meta.bounds);
   const region = meta.smoke ? L.latLngBounds(meta.smoke.bounds) : bounds;  // Borneo plus Singapore and Kuala Lumpur
-  const FIRE_ZONE = L.latLngBounds([[-4.2, 108.9], [1.4, 117.8]]);          // where the burns cluster
-  const PROOF_ZONE = L.latLngBounds([[-3.1, 109.7], [-1.3, 111.3]]);       // Ketapang's burns, close enough to see dots
   const KETAPANG = meta.ketapang || [-2.2, 110.48];
   const $ = (id) => document.getElementById(id);
   const narrow = () => window.innerWidth <= 700;
@@ -278,14 +276,14 @@
         <div class="gas-aod"><div class="aodbar"></div>
         <div class="aodticks"><span style="left:0">clear</span><span style="left:26%">1 very hazy</span><span style="left:63%">2</span><span style="right:0">3+ smoke</span></div>
         <p class="hint">Haze level (aerosol optical depth): under 0.1 is a clear sky, 1 is very hazy (NASA Earth Observatory). <i class="key nodata"></i>Striped: no reading.</p></div>`,
-      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(4, last - 1, 420); },  // from late July: June is mostly cloud with no reading
+      enter() { Object.assign(view, { smoke: true, fires: false, peat: false }); flyTo(narrow() ? region : region.pad(-0.08)); animate(4, last - 1, 650); },  // from late July: June is mostly cloud with no reading
     },
     {
       title: "Radar sees through it",
       body: "NISAR's radar passes through smoke. When the canopy burns, its echo collapses. Red is where it did.",
       widget: `<div class="big loss" data-live="km2"></div><small>km² of tree cover lost since June</small>${keys}` +
         (confirmed ? `<p class="confirm"><b>${confirmed} in 10</b> confirmed by other NASA satellites.</p>` : ""),
-      enter() { Object.assign(view, { smoke: false, fires: false, peat: false }); stop(); current = 0; flyTo(narrow() ? FIRE_ZONE.pad(0.12) : FIRE_ZONE); later(() => animate(0, last, 650), 1200); },
+      enter() { Object.assign(view, { smoke: false, fires: false, peat: false }); stop(); current = 0; flyTo(bounds); later(() => animate(0, last, 650), 1200); },
     },
     {
       title: "It lines up with fire",
@@ -298,7 +296,7 @@
         </div>
         <p class="keys"><span><i class="key fire"></i>fire next to a burn</span><span><i class="key firefaint"></i>other fire</span></p>` +
         (optical ? `<p class="second">Optical satellites agree: <b>${optPct}%</b> vs <b>${optChance}%</b> by chance.</p>` : ""),
-      enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); current = 3; flyTo(PROOF_ZONE); later(() => animate(3, last, 900), 1300); },
+      enter() { Object.assign(view, { smoke: false, fires: true, peat: false }); stop(); current = 3; flyTo(bounds); later(() => animate(3, last, 900), 1300); },
     },
     {
       title: "The cost: peat carbon",
